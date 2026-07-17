@@ -1,0 +1,31 @@
+version = 1
+revision = 3
+requires-python = ">=3.14"
+
+[manifest]
+members = [
+    "common",
+    "dependency-sentinel",
+    "gateway",
+    "repository-scanner-service",
+]
+
+[[package]]
+name = "common"
+version = "0.1.0"
+source = { virtual = "libs/common" }
+
+[[package]]
+name = "dependency-sentinel"
+version = "0.1.0"
+source = { virtual = "." }
+
+[[package]]
+name = "gateway"
+version = "0.1.0"
+source = { virtual = "services/gateway" }
+
+[[package]]
+name = "repository-scanner-service"
+version = "0.1.0"
+source = { virtual = "services/repository_scanner_service" }
