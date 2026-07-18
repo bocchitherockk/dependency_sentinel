@@ -1,60 +1,107 @@
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout(true)
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
     environment {
         PYTHON_CMD = 'py'
-        UV_CMD = 'uv'
+        PIP_DISABLE_PIP_VERSION_CHECK = '1'
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
-                echo " Code récupéré depuis GitHub"
             }
         }
 
-        stage('Setup Python') {
+        stage('Verify Environment') {
             steps {
-                script {
-                    def pythonVersion = bat(script: "${env.PYTHON_CMD} --version", returnStdout: true).trim()
-                    echo " Version Python : ${pythonVersion}"
-                }
+                bat '''
+                    @echo off
+
+                    echo ========================================
+                    echo Jenkins Windows environment
+                    echo ========================================
+
+                    echo Current user:
+                    whoami
+
+                    echo Current workspace:
+                    cd
+
+                    echo Workspace content:
+                    dir
+
+                    echo Python launcher:
+                    where %PYTHON_CMD%
+
+                    echo Python version:
+                    %PYTHON_CMD% --version
+
+                    if not exist pyproject.toml (
+                        echo.
+                        echo ERROR: pyproject.toml was not found.
+                        echo Check the Git repository and Jenkins branch configuration.
+                        exit /b 1
+                    )
+
+                    echo pyproject.toml found successfully.
+                '''
+            }
+        }
+
+        stage('Install UV') {
+            steps {
+                bat '''
+                    @echo off
+
+                    echo Installing uv...
+                    %PYTHON_CMD% -m pip install --upgrade uv
+
+                    echo Checking uv...
+                    %PYTHON_CMD% -m uv --version
+                '''
             }
         }
 
         stage('Install Dependencies') {
             steps {
-                script {
-                    bat "${env.PYTHON_CMD} -m pip install uv"
-                    bat "${env.UV_CMD} sync"
-                    echo " Dépendances installées"
-                }
+                bat '''
+                    @echo off
+
+                    if exist uv.lock (
+                        echo uv.lock found. Installing locked dependencies...
+                        %PYTHON_CMD% -m uv sync --locked
+                    ) else (
+                        echo WARNING: uv.lock was not found.
+                        echo Installing dependencies from pyproject.toml...
+                        %PYTHON_CMD% -m uv sync
+                    )
+                '''
             }
         }
 
         stage('Run Tests') {
             steps {
-                script {
-                    bat "${env.UV_CMD} run pytest --junitxml=test-results.xml"
-                    echo " Tests passés"
-                }
+                bat '''
+                    @echo off
+
+                    echo Running tests...
+                    %PYTHON_CMD% -m uv run pytest -v --junitxml=test-results.xml
+                '''
             }
+
             post {
                 always {
-                    junit 'test-results.xml'
-                }
-            }
-        }
-
-        stage('Build Docker Images') {
-            steps {
-                script {
-                    bat "docker build -t dependency-sentinel-gateway:${env.BUILD_ID} -f services/gateway/Dockerfile ."
-                    echo " Image Gateway construite"
-
-                    bat "docker build -t dependency-sentinel-scanner:${env.BUILD_ID} -f services/repository_scanner_service/Dockerfile ."
-                    echo " Image Scanner construite"
+                    junit(
+                        testResults: 'test-results.xml',
+                        allowEmptyResults: true
+                    )
                 }
             }
         }
@@ -62,13 +109,22 @@ pipeline {
 
     post {
         success {
-            echo " Pipeline terminé avec succès !"
-            echo " Images créées :"
-            echo "  - dependency-sentinel-gateway:${env.BUILD_ID}"
-            echo "  - dependency-sentinel-scanner:${env.BUILD_ID}"
+            echo 'Dependency Sentinel pipeline completed successfully.'
         }
+
+        unstable {
+            echo 'Pipeline completed, but some tests failed.'
+        }
+
         failure {
-            echo " Le pipeline a échoué. Vérifie les logs."
+            echo 'Pipeline failed. Check the first ERROR in Console Output.'
+        }
+
+        always {
+            archiveArtifacts(
+                artifacts: 'test-results.xml',
+                allowEmptyArchive: true
+            )
         }
     }
 }
