@@ -7,11 +7,6 @@ pipeline {
         timeout(time: 30, unit: 'MINUTES')
     }
 
-    environment {
-        PYTHON_CMD = 'py'
-        PIP_DISABLE_PIP_VERSION_CHECK = '1'
-    }
-
     stages {
         stage('Checkout') {
             steps {
@@ -19,14 +14,10 @@ pipeline {
             }
         }
 
-        stage('Verify Environment') {
+        stage('Verify Project') {
             steps {
                 bat '''
                     @echo off
-
-                    echo ========================================
-                    echo Jenkins Windows environment
-                    echo ========================================
 
                     echo Current user:
                     whoami
@@ -34,37 +25,69 @@ pipeline {
                     echo Current workspace:
                     cd
 
-                    echo Workspace content:
+                    echo Project files:
                     dir
 
-                    echo Python launcher:
-                    where %PYTHON_CMD%
-
-                    echo Python version:
-                    %PYTHON_CMD% --version
-
                     if not exist pyproject.toml (
-                        echo.
-                        echo ERROR: pyproject.toml was not found.
-                        echo Check the Git repository and Jenkins branch configuration.
+                        echo ERROR: pyproject.toml not found
                         exit /b 1
                     )
 
-                    echo pyproject.toml found successfully.
+                    if not exist uv.lock (
+                        echo ERROR: uv.lock not found
+                        exit /b 1
+                    )
+
+                    if exist .python-version (
+                        echo Requested Python version:
+                        type .python-version
+                    )
                 '''
             }
         }
 
         stage('Install UV') {
             steps {
+                powershell '''
+                    $ErrorActionPreference = "Stop"
+
+                    $uvDirectory = Join-Path $env:WORKSPACE "tools\\uv"
+                    $uvExecutable = Join-Path $uvDirectory "uv.exe"
+
+                    if (-not (Test-Path $uvExecutable)) {
+                        Write-Host "Installing uv in the Jenkins workspace..."
+
+                        $env:UV_UNMANAGED_INSTALL = $uvDirectory
+                        Invoke-RestMethod "https://astral.sh/uv/install.ps1" |
+                            Invoke-Expression
+                    }
+
+                    & $uvExecutable --version
+
+                    if ($LASTEXITCODE -ne 0) {
+                        exit $LASTEXITCODE
+                    }
+                '''
+            }
+        }
+
+        stage('Install Python') {
+            steps {
                 bat '''
                     @echo off
 
-                    echo Installing uv...
-                    %PYTHON_CMD% -m pip install --upgrade uv
+                    set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
+                    set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
+                    set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
 
-                    echo Checking uv...
-                    %PYTHON_CMD% -m uv --version
+                    echo Installing the Python version requested by the project...
+
+                    "%UV_EXE%" python install
+                    if errorlevel 1 exit /b 1
+
+                    echo Python interpreter selected by uv:
+                    "%UV_EXE%" python find
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -74,14 +97,14 @@ pipeline {
                 bat '''
                     @echo off
 
-                    if exist uv.lock (
-                        echo uv.lock found. Installing locked dependencies...
-                        %PYTHON_CMD% -m uv sync --locked
-                    ) else (
-                        echo WARNING: uv.lock was not found.
-                        echo Installing dependencies from pyproject.toml...
-                        %PYTHON_CMD% -m uv sync
-                    )
+                    set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
+                    set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
+                    set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
+
+                    echo Installing locked dependencies...
+
+                    "%UV_EXE%" sync --locked
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -91,8 +114,17 @@ pipeline {
                 bat '''
                     @echo off
 
+                    set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
+                    set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
+                    set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
+
+                    if exist test-results.xml (
+                        del /q test-results.xml
+                    )
+
                     echo Running tests...
-                    %PYTHON_CMD% -m uv run pytest -v --junitxml=test-results.xml
+
+                    "%UV_EXE%" run pytest -v --junitxml=test-results.xml
                 '''
             }
 
@@ -110,10 +142,6 @@ pipeline {
     post {
         success {
             echo 'Dependency Sentinel pipeline completed successfully.'
-        }
-
-        unstable {
-            echo 'Pipeline completed, but some tests failed.'
         }
 
         failure {
