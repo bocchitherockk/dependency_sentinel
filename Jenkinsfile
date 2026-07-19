@@ -103,7 +103,7 @@ pipeline {
 
                     echo Installing locked dependencies...
 
-                    "%UV_EXE%" sync --locked
+                    "%UV_EXE%" sync --locked --all-packages
                     if errorlevel 1 exit /b 1
                 '''
             }
