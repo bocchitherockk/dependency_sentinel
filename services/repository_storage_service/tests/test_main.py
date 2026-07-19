@@ -42,7 +42,10 @@ def test_clone_repository_pulls_existing_repository(storage_main_module, tmp_pat
 
     monkeypatch.setattr(storage_main_module, "Repo", FakeRepo)
 
-    result = storage_main_module.clone_repository("https://github.com/acme/example.git")
+    request = storage_main_module.CloneRepositoryRequest(
+        repository_url="https://github.com/acme/example.git"
+    )
+    result = storage_main_module.clone_repository_endpoint(request)
 
     assert result == {
         "message": "Repository https://github.com/acme/example.git already exists. Pulled the latest changes."
@@ -65,7 +68,10 @@ def test_clone_repository_clones_missing_repository(storage_main_module, tmp_pat
 
     monkeypatch.setattr(storage_main_module, "Repo", FakeRepo)
 
-    result = storage_main_module.clone_repository("https://github.com/acme/new-repo.git")
+    request = storage_main_module.CloneRepositoryRequest(
+        repository_url="https://github.com/acme/new-repo.git"
+    )
+    result = storage_main_module.clone_repository_endpoint(request)
 
     assert result == {
         "message": "Repository https://github.com/acme/new-repo.git cloned successfully."
@@ -82,7 +88,10 @@ def test_update_file_content_writes_the_new_content(storage_main_module, tmp_pat
     file_path.parent.mkdir(parents=True)
     file_path.write_text("old content")
 
-    result = storage_main_module.update_file_content("package/manifest.txt", "new content")
+    request = storage_main_module.UpdateFileContentRequest(new_content="new content")
+    result = storage_main_module.update_file_content_endpoint(
+        "package/manifest.txt", request
+    )
 
     assert file_path.read_text() == "new content"
     assert result == {"message": "File package/manifest.txt updated successfully."}
