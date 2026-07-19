@@ -19,3 +19,6 @@ dist/
 # IDEs
 .vscode/
 .idea/
+
+# cloned repositories in Repository storage service
+services/repository_storage_service/repositories/
