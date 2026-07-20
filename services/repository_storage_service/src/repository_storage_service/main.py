@@ -41,15 +41,23 @@ def clone_repository_endpoint(clone_repository_request: CloneRepositoryRequest):
 # This endpoint should be called by the repository scanner service (with display_files_content set to False) to get the list of files and directories in the repository to then use them to talk to the LLM and get the important manifest files in the repository.
 # This endpoint should also be called by the dependency analyzer service (with display_files_content set to True) to get the content of the important manifest files in the repository to then parse them and get the dependencies in the repository.
 # This endpoint might be called by the dependency modifier service (with display_files_content set to True) to get the content of the important manifest files in the repository to then modify them and write them back to the repository. (i might also remove the Dependency modifier service and let this Repository storage service handle the modification directly through the MCP call)
-@app.get('/repositories/{path:path}')
-def get_fs_object_content_endpoint(path: str, display_files_content: bool = False):
-    fs_object_path = Path(f'./repositories/{path}')
+@app.get("/repositories/{path:path}")
+def browse_repository(
+    path: str,
+    display_files_content: bool = False,
+):
+    fs_object_path = Path("./repositories") / path
+
     if not fs_object_path.exists():
-        return { 'error': 'File or directory not found' }
+        return {
+            "error": "File or directory not found",
+            "searched_path": str(fs_object_path.resolve()),
+        }
 
-    fs_object_content = get_fs_object_content(fs_object_path, display_files_content)
-    return fs_object_content
-
+    return get_fs_object_content(
+        fs_object_path,
+        display_files_content,
+    )
 
 class UpdateFileContentRequest(BaseModel):
     new_content: str
