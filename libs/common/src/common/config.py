@@ -1,4 +1,9 @@
 services = {
+    'gateway': {
+        'host': '127.0.0.1',
+        'port': 8000,
+        'endpoint': 'http://127.0.0.1:8000'
+    },
     'repository-storage-service': {
         'host': '127.0.0.1',
         'port': 8001,
