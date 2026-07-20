@@ -76,7 +76,7 @@ wheels = [
 [[package]]
 name = "common"
 version = "0.1.0"
-source = { virtual = "libs/common" }
+source = { editable = "libs/common" }
 
 [[package]]
 name = "dependency-sentinel"
@@ -432,11 +432,6 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
@@ -444,14 +439,12 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
 ]
 
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.0" }]
-
 [[package]]
 name = "repository-storage-service"
 version = "0.1.0"
 source = { editable = "services/repository_storage_service" }
 dependencies = [
+    { name = "common" },
     { name = "fastapi" },
     { name = "gitpython" },
     { name = "uvicorn" },
@@ -459,6 +452,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "common", editable = "libs/common" },
     { name = "fastapi", specifier = ">=0.139.2" },
     { name = "gitpython", specifier = ">=3.1.52" },
     { name = "uvicorn", specifier = ">=0.51.0" },

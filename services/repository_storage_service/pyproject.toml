@@ -5,11 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "common",
     "fastapi>=0.139.2",
     "gitpython>=3.1.52",
     "uvicorn>=0.51.0",
 ]
 
+[tool.uv.sources]
+common = { workspace = true }
 
 [project.scripts]
 repository-storage-service = "repository_storage_service.__main__:main"

@@ -6,7 +6,9 @@ from git import Repo
 from pydantic import BaseModel
 
 from repository_storage_service.utils import get_fs_object_content
-
+from common.config import services
+from common.schemas.CloneRepositoryRequest import CloneRepositoryRequest
+from common.schemas.UpdateFileContentRequest import UpdateFileContentRequest
 
 
 app = FastAPI()
@@ -14,8 +16,6 @@ app = FastAPI()
 os.chdir('./services/repository_storage_service/') # change current working directory
 os.makedirs('./repositories', exist_ok=True)
 
-class CloneRepositoryRequest(BaseModel):
-    repository_url: str
 
 # This endpoint should be called only by the scheduler service, which will provide the repository URL to be cloned.
 # The scheduler service will be responsible for managing the list of repositories to be cloned and for calling this endpoint with the appropriate repository URL.
@@ -59,9 +59,6 @@ def browse_repository(
         display_files_content,
     )
 
-class UpdateFileContentRequest(BaseModel):
-    new_content: str
-
 # This endpoint should be called by the Dependency modifier service (which is initially called by the LLM through the MCP server)
 # note: the Dependency modifier service will be responsible for providing correct content to be written in the file
 @app.put('/repositories/{path:path}')
@@ -81,7 +78,7 @@ def update_file_content_endpoint(path: str, update_file_content_request: UpdateF
 def main() -> None:
     uvicorn.run(
         app,
-        host='127.0.0.1',
-        port=8000,
+        host=services['repository-storage-service']['host'],
+        port=services['repository-storage-service']['port'],
         # reload=True,
     )

@@ -2,7 +2,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 
 from repository_scanner_service.scanner import scan_repository
-
+from common.config import services
 
 app = FastAPI(
     title="Repository Scanner Service",
@@ -48,8 +48,8 @@ def scan(repository_name: str) -> dict:
 def main() -> None:
     uvicorn.run(
         app,
-        host="127.0.0.1",
-        port=8001,
+        host=services['repository-scanner-service']['host'],
+        port=services['repository-scanner-service']['port'],
     )
 
 
