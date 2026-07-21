@@ -29,36 +29,6 @@ def join_path(parent: str, child: str) -> str:
     return f"{parent}/{child}"
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 from typing import Any
 
 from repository_scanner_service.parsers import parse_manifest
@@ -88,39 +58,6 @@ def join_path(parent: str, child: str) -> str:
         return parent
 
     return f"{parent}/{child}"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def find_manifest_files(
@@ -221,23 +158,6 @@ def find_manifest_files(
                     )
 
     return sorted(set(manifest_paths))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def extract_file_content(file_data: Any) -> str:
@@ -373,24 +293,6 @@ def scan_repository(repository_name: str) -> dict[str, Any]:
         "results": results,
         "errors": errors,
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def extract_file_content(file_data: Any) -> str:
     if isinstance(file_data, str):
         return file_data
