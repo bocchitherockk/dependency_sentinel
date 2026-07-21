@@ -51,7 +51,3 @@ def main() -> None:
         host=services['repository-scanner-service']['host'],
         port=services['repository-scanner-service']['port'],
     )
-
-
-if __name__ == "__main__":
-    main()
