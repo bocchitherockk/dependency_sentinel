@@ -85,13 +85,7 @@ async def test_ollama_manifest_detection() -> dict:
 
 
 @app.get("/scan/{repository_name}")
-def scan(repository_name: str) -> dict:
-    """
-    Scan a repository stored by the Repository Storage Service.
-
-    For the moment, this route continues to use the existing
-    scan_repository function.
-    """
+async def scan(repository_name: str) -> dict:
     repository_name = repository_name.strip()
 
     if not repository_name:
@@ -101,7 +95,9 @@ def scan(repository_name: str) -> dict:
         )
 
     try:
-        return scan_repository(repository_name)
+        return await scan_repository(
+            repository_name
+        )
 
     except ValueError as error:
         raise HTTPException(

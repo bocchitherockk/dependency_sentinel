@@ -9,9 +9,18 @@ from repository_scanner_service.storage_client import (
 )
 
 
+# Maximum number of repository paths sent to Ollama per request.
+OLLAMA_BATCH_SIZE = 20
+
+
 def normalize_path(path: str) -> str:
     """
     Normalize Windows and Unix paths to the same format.
+
+    Example:
+        angular\\package.json
+    becomes:
+        angular/package.json
     """
     return path.replace("\\", "/").strip("/")
 
@@ -32,15 +41,40 @@ def join_path(parent: str, child: str) -> str:
     return f"{parent}/{child}"
 
 
+def remove_repository_prefix(
+    path: str,
+    repository_name: str,
+) -> str:
+    """
+    Remove the repository root name from a complete path.
+
+    Example:
+        my-project/angular/package.json
+
+    becomes:
+        angular/package.json
+    """
+    path = normalize_path(path)
+    repository_name = normalize_path(repository_name)
+
+    prefix = f"{repository_name}/"
+
+    if path.startswith(prefix):
+        return path[len(prefix):]
+
+    return path
+
+
 def find_repository_files(
     node: Any,
     current_path: str = "",
 ) -> list[str]:
     """
     Traverse the repository tree returned by the Storage Service
-    and return every file path.
+    and return all file paths.
 
-    Ollama will later decide which files are dependency manifests.
+    This function does not decide which files are manifests.
+    Ollama performs the manifest detection later.
     """
     file_paths: list[str] = []
 
@@ -66,7 +100,6 @@ def find_repository_files(
     if not isinstance(node_name, str):
         node_name = ""
 
-    # Standard directory structure returned by the Storage Service.
     if node_type in {
         "directory",
         "folder",
@@ -90,7 +123,6 @@ def find_repository_files(
 
         return sorted(set(file_paths))
 
-    # Standard file structure returned by the Storage Service.
     if node_type == "file":
         file_path = join_path(
             current_path,
@@ -102,7 +134,6 @@ def find_repository_files(
 
         return file_paths
 
-    # Fallback when the Storage Service returns a path field.
     node_path = (
         node.get("path")
         or node.get("relative_path")
@@ -118,7 +149,6 @@ def find_repository_files(
                 normalized_node_path
             )
 
-    # Generic fallback for other possible tree structures.
     for key, value in node.items():
         if key in {
             "name",
@@ -164,7 +194,7 @@ def extract_file_content(
     file_data: Any,
 ) -> str:
     """
-    Extract the real text content from a Storage Service response.
+    Extract the text content from a Storage Service response.
     """
     if isinstance(file_data, str):
         return file_data
@@ -199,37 +229,79 @@ def extract_file_content(
     )
 
 
-def remove_repository_prefix(
-    path: str,
-    repository_name: str,
-) -> str:
+async def detect_manifests_in_batches(
+    repository_files: list[str],
+    batch_size: int = OLLAMA_BATCH_SIZE,
+) -> list[dict[str, Any]]:
     """
-    Remove the repository root name from a complete file path.
+    Send repository paths to Ollama in small batches.
 
-    Example:
-        project/frontend/package.json
-    becomes:
-        frontend/package.json
+    Sending hundreds of paths in one request may be unreliable
+    with a small local model.
     """
-    path = normalize_path(path)
-    repository_name = normalize_path(
-        repository_name
-    )
+    if batch_size <= 0:
+        raise ValueError(
+            "La taille d'un lot Ollama doit être supérieure à zéro."
+        )
 
-    prefix = f"{repository_name}/"
+    detections_by_path: dict[str, dict[str, Any]] = {}
 
-    if path.startswith(prefix):
-        return path[len(prefix):]
+    for start_index in range(
+        0,
+        len(repository_files),
+        batch_size,
+    ):
+        batch = repository_files[
+            start_index:start_index + batch_size
+        ]
 
-    return path
+        batch_detections = await detect_manifest_files(
+            batch
+        )
+
+        for detection in batch_detections:
+            if not isinstance(detection, dict):
+                continue
+
+            detected_path = detection.get("path")
+
+            if not isinstance(detected_path, str):
+                continue
+
+            normalized_path = normalize_path(
+                detected_path
+            )
+
+            if not normalized_path:
+                continue
+
+            normalized_detection = dict(detection)
+            normalized_detection["path"] = normalized_path
+
+            detections_by_path[normalized_path] = (
+                normalized_detection
+            )
+
+    return [
+        detections_by_path[path]
+        for path in sorted(detections_by_path)
+    ]
 
 
 async def scan_repository(
     repository_name: str,
 ) -> dict[str, Any]:
     """
-    Scan a repository using Ollama for manifest detection
-    and deterministic parsers for dependency extraction.
+    Scan a repository.
+
+    Workflow:
+    1. Retrieve the repository tree from Storage Service.
+    2. Extract all repository file paths.
+    3. Send the paths to Ollama in batches.
+    4. Validate the detected manifest paths.
+    5. Retrieve the content of every detected manifest.
+    6. Parse dependencies using deterministic parsers.
+    7. Return the complete scan result.
     """
     repository_name = normalize_path(
         repository_name
@@ -241,7 +313,7 @@ async def scan_repository(
         )
 
     # Step 1:
-    # Retrieve the complete repository tree from Storage Service.
+    # Retrieve the complete repository tree.
     repository_content = get_repository_content(
         repository_name,
         show_content=False,
@@ -252,48 +324,89 @@ async def scan_repository(
         and repository_content.get("error")
     ):
         raise ValueError(
-            repository_content["error"]
+            str(repository_content["error"])
         )
 
     # Step 2:
-    # Extract every file path from the repository tree.
-    repository_files = find_repository_files(
+    # Extract all file paths.
+    raw_repository_files = find_repository_files(
         repository_content
     )
 
     repository_files = sorted(
         {
-            normalize_path(path)
-            for path in repository_files
-            if path
+            remove_repository_prefix(
+                normalize_path(path),
+                repository_name,
+            )
+            for path in raw_repository_files
+            if isinstance(path, str) and path
         }
     )
 
+    if not repository_files:
+        return {
+            "repository": repository_name,
+            "repository_file_count": 0,
+            "detected_manifest_count": 0,
+            "parsed_manifest_count": 0,
+            "dependency_count": 0,
+            "manifest_files": [],
+            "manifest_detections": [],
+            "results": [],
+            "errors": [
+                {
+                    "file": repository_name,
+                    "error": (
+                        "Aucun fichier n'a été trouvé "
+                        "dans le repository."
+                    ),
+                }
+            ],
+        }
+
     # Step 3:
-    # Send the repository file paths to Ollama.
-    manifest_detections = await detect_manifest_files(
+    # Detect manifests dynamically with Ollama.
+    manifest_detections = await detect_manifests_in_batches(
         repository_files
     )
 
     # Step 4:
-    # Keep the paths returned and validated by ollama_client.py.
+    # Keep only valid paths returned by Ollama.
+    repository_file_set = set(repository_files)
+
+    valid_manifest_detections: list[dict[str, Any]] = []
+
+    for detection in manifest_detections:
+        detected_path = normalize_path(
+            str(detection.get("path", ""))
+        )
+
+        if not detected_path:
+            continue
+
+        if detected_path not in repository_file_set:
+            continue
+
+        normalized_detection = dict(detection)
+        normalized_detection["path"] = detected_path
+
+        valid_manifest_detections.append(
+            normalized_detection
+        )
+
+    manifest_detections = valid_manifest_detections
+
     manifest_paths = sorted(
         {
-            normalize_path(
-                detection.get("path", "")
-            )
+            detection["path"]
             for detection in manifest_detections
-            if detection.get("path")
         }
     )
 
-    # Keep Ollama metadata for each detected file.
     detection_by_path = {
-        normalize_path(
-            detection["path"]
-        ): detection
+        detection["path"]: detection
         for detection in manifest_detections
-        if detection.get("path")
     }
 
     results: list[dict[str, Any]] = []
@@ -313,7 +426,6 @@ async def scan_repository(
         )
 
         try:
-            # Retrieve the real manifest content from Storage Service.
             file_data = get_repository_content(
                 full_storage_path,
                 show_content=True,
@@ -324,14 +436,15 @@ async def scan_repository(
                 and file_data.get("error")
             ):
                 raise ValueError(
-                    file_data["error"]
+                    str(file_data["error"])
                 )
 
             file_content = extract_file_content(
                 file_data
             )
 
-            # Use the deterministic parser.
+            # Step 6:
+            # Extract dependencies using the existing parser.
             parsed_result = parse_manifest(
                 relative_path,
                 file_content,
@@ -380,6 +493,8 @@ async def scan_repository(
         for result in results
     )
 
+    # Step 7:
+    # Return the complete scan result.
     return {
         "repository": repository_name,
         "repository_file_count": len(
