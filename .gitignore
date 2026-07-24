@@ -22,3 +22,6 @@ dist/
 
 # cloned repositories in Repository storage service
 services/repository_storage_service/repositories/
+
+
+.env

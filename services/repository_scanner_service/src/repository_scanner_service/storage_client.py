@@ -1,7 +1,7 @@
 import httpx
 
 
-STORAGE_URL = "http://127.0.0.1:8000"
+STORAGE_URL = "http://127.0.0.1:8001"
 
 
 def get_repository_content(path: str, show_content: bool = False):
