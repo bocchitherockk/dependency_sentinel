@@ -123,8 +123,7 @@ pipeline {
                     echo Installing locked third-party dependencies...
                     echo Local workspace packages will be loaded through PYTHONPATH.
 
-                    "%UV_EXE%" sync --locked --no-install-workspace
-
+                    "%UV_EXE%" sync --locked --all-packages --no-install-workspace
                     if errorlevel 1 (
                         exit /b 1
                     )
