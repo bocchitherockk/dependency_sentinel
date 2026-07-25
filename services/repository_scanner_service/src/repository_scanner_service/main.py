@@ -1,10 +1,17 @@
+import sys
+from pathlib import Path
+
+# Add src directory to Python path
+SRC_PATH = Path(__file__).resolve().parent.parent
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+
+
 import uvicorn
 from fastapi import FastAPI, HTTPException
 
 from common.config import services
-from repository_scanner_service.ollama_client import (
-    OllamaClientError,
-    check_ollama_health,
+from repository_scanner_service.llm_client import (
     detect_manifest_files,
 )
 from repository_scanner_service.scanner import scan_repository
@@ -14,7 +21,7 @@ app = FastAPI(
     title="Repository Scanner Service",
     description=(
         "Scans repositories, detects dependency manifest files "
-        "with Ollama, and extracts their dependencies."
+        "with the LLM Service, and extracts their dependencies."
     ),
     version="0.2.0",
 )
@@ -31,30 +38,12 @@ def home() -> dict[str, str]:
     }
 
 
-@app.get("/ollama/health")
-async def ollama_health() -> dict:
+@app.post("/llm/test")
+async def test_llm_manifest_detection() -> dict:
     """
-    Verify that the Scanner Service can communicate with Ollama
-    and that the configured model is installed.
+    Test LLM manifest detection using example repository paths.
     """
-    try:
-        return await check_ollama_health()
 
-    except OllamaClientError as error:
-        raise HTTPException(
-            status_code=503,
-            detail=str(error),
-        ) from error
-
-
-@app.post("/ollama/test")
-async def test_ollama_manifest_detection() -> dict:
-    """
-    Test Ollama manifest detection using example repository paths.
-
-    This route is temporary and is used before integrating Ollama
-    into the real repository scanning workflow.
-    """
     repository_files = [
         "frontend/package.json",
         "frontend/package-lock.json",
@@ -71,7 +60,7 @@ async def test_ollama_manifest_detection() -> dict:
             repository_files
         )
 
-    except OllamaClientError as error:
+    except Exception as error:
         raise HTTPException(
             status_code=503,
             detail=str(error),
@@ -116,6 +105,7 @@ def main() -> None:
     """
     Start the Repository Scanner Service.
     """
+
     scanner_service = services[
         "repository-scanner-service"
     ]

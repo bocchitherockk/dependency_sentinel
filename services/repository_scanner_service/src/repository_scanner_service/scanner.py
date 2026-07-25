@@ -1,16 +1,16 @@
 from typing import Any
 
-from repository_scanner_service.ollama_client import (
+from repository_scanner_service.llm_client import (
     detect_manifest_files,
+    extract_dependencies,
 )
-from repository_scanner_service.parsers import parse_manifest
 from repository_scanner_service.storage_client import (
     get_repository_content,
 )
 
 
-# Maximum number of repository paths sent to Ollama per request.
-OLLAMA_BATCH_SIZE = 20
+# Maximum number of repository paths sent to the LLM Service per request.
+LLM_BATCH_SIZE = 20
 
 
 def normalize_path(path: str) -> str:
@@ -74,7 +74,7 @@ def find_repository_files(
     and return all file paths.
 
     This function does not decide which files are manifests.
-    Ollama performs the manifest detection later.
+    The LLM Service performs the manifest detection later.
     """
     file_paths: list[str] = []
 
@@ -231,17 +231,17 @@ def extract_file_content(
 
 async def detect_manifests_in_batches(
     repository_files: list[str],
-    batch_size: int = OLLAMA_BATCH_SIZE,
+    batch_size: int = LLM_BATCH_SIZE,
 ) -> list[dict[str, Any]]:
     """
-    Send repository paths to Ollama in small batches.
+    Send repository paths to the LLM Service in small batches.
 
     Sending hundreds of paths in one request may be unreliable
     with a small local model.
     """
     if batch_size <= 0:
         raise ValueError(
-            "La taille d'un lot Ollama doit être supérieure à zéro."
+            "La taille d'un lot pour le LLM Service doit être supérieure à zéro."
         )
 
     detections_by_path: dict[str, dict[str, Any]] = {}
@@ -255,6 +255,9 @@ async def detect_manifests_in_batches(
             start_index:start_index + batch_size
         ]
 
+        # The LLM Service is now the only component that talks to the
+        # underlying model (Ollama, or any other provider). The scanner
+        # never calls the model directly anymore.
         batch_detections = await detect_manifest_files(
             batch
         )
@@ -294,13 +297,15 @@ async def scan_repository(
     """
     Scan a repository.
 
-    Workflow:
-    1. Retrieve the repository tree from Storage Service.
+    Workflow (new architecture):
+    1. Retrieve the repository tree from the Storage Service.
     2. Extract all repository file paths.
-    3. Send the paths to Ollama in batches.
+    3. Send the paths to the LLM Service, in batches, to detect manifests.
     4. Validate the detected manifest paths.
-    5. Retrieve the content of every detected manifest.
-    6. Parse dependencies using deterministic parsers.
+    5. Retrieve the content of every detected manifest from the Storage Service.
+    6. Send the manifest content to the LLM Service to extract dependencies.
+       (There is no deterministic parser anymore: the LLM performs the
+       extraction directly.)
     7. Return the complete scan result.
     """
     repository_name = normalize_path(
@@ -366,13 +371,13 @@ async def scan_repository(
         }
 
     # Step 3:
-    # Detect manifests dynamically with Ollama.
+    # Detect manifests dynamically through the LLM Service.
     manifest_detections = await detect_manifests_in_batches(
         repository_files
     )
 
     # Step 4:
-    # Keep only valid paths returned by Ollama.
+    # Keep only valid paths returned by the LLM Service.
     repository_file_set = set(repository_files)
 
     valid_manifest_detections: list[dict[str, Any]] = []
@@ -412,8 +417,10 @@ async def scan_repository(
     results: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
 
-    # Step 5:
-    # Retrieve and parse every detected manifest.
+    # Step 5 & 6:
+    # Retrieve every detected manifest, then ask the LLM Service to
+    # extract its dependencies. There is no local/deterministic parser
+    # involved anymore - the LLM Service owns that logic entirely.
     for detected_path in manifest_paths:
         relative_path = remove_repository_prefix(
             detected_path,
@@ -444,11 +451,20 @@ async def scan_repository(
             )
 
             # Step 6:
-            # Extract dependencies using the existing parser.
-            parsed_result = parse_manifest(
+            # Extract dependencies through the LLM Service instead of
+            # a deterministic parser.
+            llm_result = await extract_dependencies(
                 relative_path,
                 file_content,
             )
+
+            if not isinstance(llm_result, dict):
+                raise ValueError(
+                    "Réponse invalide reçue du LLM Service "
+                    "pour l'extraction des dépendances."
+                )
+
+            parsed_result: dict[str, Any] = dict(llm_result)
 
             detection = detection_by_path.get(
                 detected_path,
@@ -459,10 +475,18 @@ async def scan_repository(
                 relative_path
             )
 
+            parsed_result.setdefault(
+                "dependencies",
+                [],
+            )
+
             parsed_result["detected_ecosystem"] = (
                 detection.get(
                     "ecosystem",
-                    "unknown",
+                    parsed_result.get(
+                        "ecosystem",
+                        "unknown",
+                    ),
                 )
             )
 
