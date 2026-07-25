@@ -125,7 +125,3 @@ def main() -> None:
         host=scanner_service["host"],
         port=scanner_service["port"],
     )
-
-
-if __name__ == "__main__":
-    main()
