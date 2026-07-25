@@ -5,12 +5,14 @@ pipeline {
         skipDefaultCheckout(true)
         timestamps()
         timeout(time: 60, unit: 'MINUTES')
+        disableConcurrentBuilds()
     }
 
     environment {
         OLLAMA_URL = 'http://127.0.0.1:11434'
         OLLAMA_MODEL = 'qwen2.5-coder:1.5b'
         OLLAMA_TIMEOUT_SECONDS = '300'
+        UV_NO_PROGRESS = '1'
     }
 
     stages {
@@ -57,22 +59,15 @@ pipeline {
                 powershell '''
                     $ErrorActionPreference = "Stop"
 
-                    $uvDirectory = Join-Path `
-                        $env:WORKSPACE `
-                        "tools\\uv"
-
-                    $uvExecutable = Join-Path `
-                        $uvDirectory `
-                        "uv.exe"
+                    $uvDirectory = Join-Path $env:WORKSPACE "tools\\uv"
+                    $uvExecutable = Join-Path $uvDirectory "uv.exe"
 
                     if (-not (Test-Path $uvExecutable)) {
-                        Write-Host `
-                            "Installing uv in the Jenkins workspace..."
+                        Write-Host "Installing uv in the Jenkins workspace..."
 
                         $env:UV_UNMANAGED_INSTALL = $uvDirectory
 
-                        Invoke-RestMethod `
-                            "https://astral.sh/uv/install.ps1" |
+                        Invoke-RestMethod "https://astral.sh/uv/install.ps1" |
                             Invoke-Expression
                     }
 
@@ -107,7 +102,6 @@ pipeline {
                     )
 
                     echo Python interpreter selected by uv:
-
                     "%UV_EXE%" python find
 
                     if errorlevel 1 (
@@ -118,167 +112,123 @@ pipeline {
         }
 
         stage('Install Dependencies') {
-    steps {
-        bat '''
-            @echo off
+            steps {
+                bat '''
+                    @echo off
 
-            set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
-            set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
-            set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
+                    set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
+                    set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
+                    set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
 
-            echo Installing locked third-party dependencies...
-            echo Local workspace packages will be loaded through PYTHONPATH.
+                    echo Installing locked third-party dependencies...
+                    echo Local workspace packages will be loaded through PYTHONPATH.
 
-            "%UV_EXE%" sync --locked --no-install-workspace
+                    "%UV_EXE%" sync --locked --no-install-workspace
 
-            if errorlevel 1 (
-                exit /b 1
-            )
-        '''
-    }
-}
+                    if errorlevel 1 (
+                        exit /b 1
+                    )
+                '''
+            }
+        }
 
         stage('Prepare Ollama') {
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
 
-                    Write-Host "Searching for Ollama..."
+                    function Test-OllamaApi {
+                        try {
+                            Invoke-RestMethod `
+                                -Uri "$env:OLLAMA_URL/api/tags" `
+                                -Method Get `
+                                -TimeoutSec 5 |
+                                Out-Null
 
-                    $ollamaCandidates = @()
-
-                    $ollamaCommand = Get-Command `
-                        ollama `
-                        -ErrorAction SilentlyContinue
-
-                    if ($ollamaCommand) {
-                        $ollamaCandidates += $ollamaCommand.Source
+                            return $true
+                        }
+                        catch {
+                            return $false
+                        }
                     }
 
-                    if ($env:OLLAMA_EXE) {
-                        $ollamaCandidates += $env:OLLAMA_EXE
+                    if (Test-OllamaApi) {
+                        Write-Host "Ollama API is already running."
                     }
+                    else {
+                        Write-Host "Ollama API is not running. Searching for ollama.exe..."
 
-                    $ollamaCandidates += Join-Path `
-                        $env:LOCALAPPDATA `
-                        "Programs\\Ollama\\ollama.exe"
+                        $ollamaCandidates = @()
 
-                    $ollamaCandidates += Join-Path `
-                        $env:WORKSPACE `
-                        "tools\\ollama\\ollama.exe"
+                        if ($env:OLLAMA_EXE) {
+                            $ollamaCandidates += $env:OLLAMA_EXE
+                        }
 
-                    $ollamaExecutable = $ollamaCandidates |
-                        Where-Object {
-                            $_ -and (Test-Path $_)
-                        } |
-                        Select-Object -First 1
+                        $ollamaCommand = Get-Command `
+                            ollama `
+                            -ErrorAction SilentlyContinue
 
-                    if (-not $ollamaExecutable) {
-                        Write-Host "Ollama was not found."
-                        Write-Host "Installing Ollama..."
+                        if ($ollamaCommand) {
+                            $ollamaCandidates += $ollamaCommand.Source
+                        }
 
-                        Invoke-RestMethod `
-                            "https://ollama.com/install.ps1" |
-                            Invoke-Expression
+                        if ($env:LOCALAPPDATA) {
+                            $ollamaCandidates += Join-Path `
+                                $env:LOCALAPPDATA `
+                                "Programs\\Ollama\\ollama.exe"
+                        }
 
-                        $ollamaExecutable = Join-Path `
-                            $env:LOCALAPPDATA `
-                            "Programs\\Ollama\\ollama.exe"
-                    }
+                        if ($env:ProgramFiles) {
+                            $ollamaCandidates += Join-Path `
+                                $env:ProgramFiles `
+                                "Ollama\\ollama.exe"
+                        }
 
-                    if (-not (Test-Path $ollamaExecutable)) {
-                        throw "Ollama executable was not found."
-                    }
+                        $userOllama = Get-ChildItem `
+                            -Path "C:\\Users\\*\\AppData\\Local\\Programs\\Ollama\\ollama.exe" `
+                            -File `
+                            -ErrorAction SilentlyContinue |
+                            Select-Object -First 1
 
-                    Write-Host `
-                        "Ollama executable: $ollamaExecutable"
+                        if ($userOllama) {
+                            $ollamaCandidates += $userOllama.FullName
+                        }
 
-                    & $ollamaExecutable --version
+                        $ollamaExecutable = $ollamaCandidates |
+                            Where-Object {
+                                $_ -and (Test-Path $_)
+                            } |
+                            Select-Object -First 1
 
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Unable to execute Ollama."
-                    }
+                        if (-not $ollamaExecutable) {
+                            throw @"
+Ollama is not running and ollama.exe was not found.
+Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
+"@
+                        }
 
-                    Write-Host "Checking Ollama API..."
-
-                    $ollamaRunning = $false
-
-                    try {
-                        Invoke-RestMethod `
-                            -Uri "$env:OLLAMA_URL/api/tags" `
-                            -Method Get `
-                            -TimeoutSec 5 |
-                            Out-Null
-
-                        $ollamaRunning = $true
-                    }
-                    catch {
-                        Write-Host "Starting Ollama server..."
+                        Write-Host "Starting Ollama from: $ollamaExecutable"
 
                         Start-Process `
                             -FilePath $ollamaExecutable `
                             -ArgumentList "serve" `
                             -WindowStyle Hidden
-                    }
 
-                    if (-not $ollamaRunning) {
-                        for (
-                            $attempt = 1;
-                            $attempt -le 30;
-                            $attempt++
-                        ) {
-                            try {
-                                Invoke-RestMethod `
-                                    -Uri "$env:OLLAMA_URL/api/tags" `
-                                    -Method Get `
-                                    -TimeoutSec 5 |
-                                    Out-Null
-
-                                $ollamaRunning = $true
+                        for ($attempt = 1; $attempt -le 30; $attempt++) {
+                            if (Test-OllamaApi) {
                                 break
                             }
-                            catch {
-                                Write-Host `
-                                    "Waiting for Ollama: attempt $attempt/30"
 
-                                Start-Sleep -Seconds 2
-                            }
+                            Write-Host "Waiting for Ollama: attempt $attempt/30"
+                            Start-Sleep -Seconds 2
                         }
                     }
 
-                    if (-not $ollamaRunning) {
-                        throw "Ollama API did not start."
+                    if (-not (Test-OllamaApi)) {
+                        throw "Ollama API did not start at $env:OLLAMA_URL."
                     }
 
-                    Write-Host "Ollama API is running."
-
-                    $installedModels = & $ollamaExecutable list
-
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Unable to list Ollama models."
-                    }
-
-                    $modelInstalled = $installedModels |
-                        Select-String `
-                            -SimpleMatch `
-                            $env:OLLAMA_MODEL
-
-                    if (-not $modelInstalled) {
-                        Write-Host `
-                            "Downloading model $env:OLLAMA_MODEL..."
-
-                        & $ollamaExecutable pull `
-                            $env:OLLAMA_MODEL
-
-                        if ($LASTEXITCODE -ne 0) {
-                            throw `
-                                "Failed to download model $env:OLLAMA_MODEL."
-                        }
-                    }
-                    else {
-                        Write-Host `
-                            "Model $env:OLLAMA_MODEL is already installed."
-                    }
+                    Write-Host "Ollama API is ready."
                 '''
             }
         }
@@ -293,10 +243,6 @@ pipeline {
                         -Method Get `
                         -TimeoutSec 10
 
-                    if (-not $response.models) {
-                        throw "No Ollama model is available."
-                    }
-
                     $availableModels = @(
                         $response.models |
                             ForEach-Object {
@@ -310,16 +256,40 @@ pipeline {
                         Write-Host "- $modelName"
                     }
 
-                    if (
-                        $availableModels -notcontains
-                        $env:OLLAMA_MODEL
-                    ) {
-                        throw `
-                            "Configured model $env:OLLAMA_MODEL is not installed."
+                    if ($availableModels -notcontains $env:OLLAMA_MODEL) {
+                        Write-Host "Model $env:OLLAMA_MODEL is missing. Pulling it now..."
+
+                        $pullBody = @{
+                            model = $env:OLLAMA_MODEL
+                            stream = $false
+                        } | ConvertTo-Json -Depth 5
+
+                        Invoke-RestMethod `
+                            -Uri "$env:OLLAMA_URL/api/pull" `
+                            -Method Post `
+                            -ContentType "application/json" `
+                            -Body $pullBody `
+                            -TimeoutSec 1800 |
+                            Out-Null
                     }
 
-                    Write-Host `
-                        "Configured model is available: $env:OLLAMA_MODEL"
+                    $verificationResponse = Invoke-RestMethod `
+                        -Uri "$env:OLLAMA_URL/api/tags" `
+                        -Method Get `
+                        -TimeoutSec 10
+
+                    $verifiedModels = @(
+                        $verificationResponse.models |
+                            ForEach-Object {
+                                $_.name
+                            }
+                    )
+
+                    if ($verifiedModels -notcontains $env:OLLAMA_MODEL) {
+                        throw "Configured model $env:OLLAMA_MODEL is not available."
+                    }
+
+                    Write-Host "Configured model is available: $env:OLLAMA_MODEL"
                 '''
             }
         }
@@ -329,8 +299,7 @@ pipeline {
                 powershell '''
                     $ErrorActionPreference = "Stop"
 
-                    Write-Host `
-                        "Warming up model $env:OLLAMA_MODEL..."
+                    Write-Host "Warming up model $env:OLLAMA_MODEL..."
 
                     $requestBody = @{
                         model = $env:OLLAMA_MODEL
@@ -352,72 +321,65 @@ pipeline {
                         -Method Post `
                         -ContentType "application/json" `
                         -Body $requestBody `
-                        -TimeoutSec (
-                            [int]$env:OLLAMA_TIMEOUT_SECONDS
-                        )
+                        -TimeoutSec ([int]$env:OLLAMA_TIMEOUT_SECONDS)
 
                     if (-not $response.message) {
                         throw "Ollama warm-up request failed."
                     }
 
                     Write-Host "Ollama model is ready."
-                    Write-Host `
-                        "Model response: $($response.message.content)"
+                    Write-Host "Model response: $($response.message.content)"
                 '''
             }
         }
 
-      stage('Run Tests') {
-    steps {
-        bat '''
-            @echo off
+        stage('Run Tests') {
+            steps {
+                bat '''
+                    @echo off
 
-            set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
-            set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
-            set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
+                    set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
+                    set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
+                    set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
+                    set "PYTHONPATH=%WORKSPACE%\\libs\\common\\src;%WORKSPACE%\\services\\gateway\\src;%WORKSPACE%\\services\\repository_storage_service\\src;%WORKSPACE%\\services\\repository_scanner_service\\src"
 
-            set "PYTHONPATH=%WORKSPACE%\\libs\\common\\src;%WORKSPACE%\\services\\gateway\\src;%WORKSPACE%\\services\\repository_storage_service\\src;%WORKSPACE%\\services\\repository_scanner_service\\src"
+                    if exist test-results.xml (
+                        del /q test-results.xml
+                    )
 
-            if exist test-results.xml (
-                del /q test-results.xml
-            )
+                    echo Python path:
+                    echo %PYTHONPATH%
 
-            echo Python path:
-            echo %PYTHONPATH%
+                    echo Running tests with Ollama model:
+                    echo %OLLAMA_MODEL%
 
-            echo Running tests with Ollama model:
-            echo %OLLAMA_MODEL%
+                    "%UV_EXE%" run --no-sync pytest -v --junitxml=test-results.xml
 
-            "%UV_EXE%" run --no-sync pytest -v --junitxml=test-results.xml
+                    if errorlevel 1 (
+                        exit /b 1
+                    )
+                '''
+            }
 
-            if errorlevel 1 (
-                exit /b 1
-            )
-        '''
-    }
-
-    post {
-        always {
-            junit(
-                testResults: 'test-results.xml',
-                allowEmptyResults: true
-            )
+            post {
+                always {
+                    junit(
+                        testResults: 'test-results.xml',
+                        allowEmptyResults: true
+                    )
+                }
+            }
         }
     }
-}
+
     post {
         success {
-            echo '''
-                Dependency Sentinel pipeline completed successfully.
-                Ollama model: qwen2.5-coder:1.5b
-            '''
+            echo 'Dependency Sentinel pipeline completed successfully.'
+            echo 'Ollama model: qwen2.5-coder:1.5b'
         }
 
         failure {
-            echo '''
-                Pipeline failed.
-                Check the first ERROR in Console Output.
-            '''
+            echo 'Pipeline failed. Check the first ERROR in Console Output.'
         }
 
         always {
