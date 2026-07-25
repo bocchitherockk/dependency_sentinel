@@ -118,24 +118,25 @@ pipeline {
         }
 
         stage('Install Dependencies') {
-            steps {
-                bat '''
-                    @echo off
+    steps {
+        bat '''
+            @echo off
 
-                    set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
-                    set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
-                    set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
+            set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
+            set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
+            set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
 
-                    echo Installing locked dependencies...
+            echo Installing locked third-party dependencies...
+            echo Local workspace packages will be loaded through PYTHONPATH.
 
-                    "%UV_EXE%" sync --locked --all-packages
+            "%UV_EXE%" sync --locked --no-install-workspace
 
-                    if errorlevel 1 (
-                        exit /b 1
-                    )
-                '''
-            }
-        }
+            if errorlevel 1 (
+                exit /b 1
+            )
+        '''
+    }
+}
 
         stage('Prepare Ollama') {
             steps {
@@ -366,41 +367,44 @@ pipeline {
             }
         }
 
-        stage('Run Tests') {
-            steps {
-                bat '''
-                    @echo off
+      stage('Run Tests') {
+    steps {
+        bat '''
+            @echo off
 
-                    set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
-                    set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
-                    set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
+            set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
+            set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
+            set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
 
-                    if exist test-results.xml (
-                        del /q test-results.xml
-                    )
+            set "PYTHONPATH=%WORKSPACE%\\libs\\common\\src;%WORKSPACE%\\services\\gateway\\src;%WORKSPACE%\\services\\repository_storage_service\\src;%WORKSPACE%\\services\\repository_scanner_service\\src"
 
-                    echo Running tests with Ollama model:
-                    echo %OLLAMA_MODEL%
+            if exist test-results.xml (
+                del /q test-results.xml
+            )
 
-                    "%UV_EXE%" run pytest -v --junitxml=test-results.xml
+            echo Python path:
+            echo %PYTHONPATH%
 
-                    if errorlevel 1 (
-                        exit /b 1
-                    )
-                '''
-            }
+            echo Running tests with Ollama model:
+            echo %OLLAMA_MODEL%
 
-            post {
-                always {
-                    junit(
-                        testResults: 'test-results.xml',
-                        allowEmptyResults: true
-                    )
-                }
-            }
-        }
+            "%UV_EXE%" run --no-sync pytest -v --junitxml=test-results.xml
+
+            if errorlevel 1 (
+                exit /b 1
+            )
+        '''
     }
 
+    post {
+        always {
+            junit(
+                testResults: 'test-results.xml',
+                allowEmptyResults: true
+            )
+        }
+    }
+}
     post {
         success {
             echo '''
