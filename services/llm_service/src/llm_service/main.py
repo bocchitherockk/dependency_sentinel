@@ -1,33 +1,33 @@
-from fastapi import FastAPI
+from typing import Any
+from fastapi import FastAPI, Body, Query
+import uvicorn
 
-from llm_service.ollama_provider import chat
-from llm_service.prompts import (
-    MANIFEST_DETECTION_PROMPT,
-    DEPENDENCY_EXTRACTION_PROMPT,
-)
+from common.config import services
+from llm_service.llm_selector import LLMSelector
+
 
 app = FastAPI()
 
 
 @app.post("/detect-manifests")
-async def detect_manifests(files: list[str]):
-
-    prompt = (
-        MANIFEST_DETECTION_PROMPT
-        + "\n\n"
-        + "\n".join(files)
-    )
-
-    return await chat(prompt)
-
+async def detect_manifests(
+    files: list[str] = Body(...),
+    model_name: str | None = Query(None)
+):
+    model = LLMSelector.get_llm_model(model_name)
+    return await model.detect_manifests(files)
 
 @app.post("/extract-dependencies")
-async def extract_dependencies(content: str):
+async def extract_dependencies(
+    manifest_file: dict[str, Any] = Body(...),
+    model_name: str | None = Query(None)
+):
+    model = LLMSelector.get_llm_model(model_name)
+    return await model.extract_dependencies(manifest_file)
 
-    prompt = (
-        DEPENDENCY_EXTRACTION_PROMPT
-        + "\n\n"
-        + content
+def main() -> None:
+    uvicorn.run(
+        app,
+        host=services['llm-service']['host'],
+        port=services['llm-service']['port'],
     )
-
-    return await chat(prompt)

@@ -5,18 +5,16 @@ description = "LLM Service - the only component that talks to the LLM provider (
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi",
-    "uvicorn[standard]",
-    "httpx",
-    "pydantic",
+    "common",
+    "fastapi>=0.139.2",
+    "uvicorn>=0.51.0",
+    "httpx>=0.28.0",
+    "google-genai>=2.14.0",
+    "python-dotenv>=1.2.2",
 ]
+
+[tool.uv.sources]
+common = { workspace = true }
 
 [project.scripts]
 llm-service = "llm_service.__main__:main"
-
-[build-system]
-requires = ["setuptools>=68.0"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["src"]
