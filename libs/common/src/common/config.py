@@ -14,4 +14,9 @@ services = {
         'port': 8002,
         'endpoint': 'http://127.0.0.1:8002'
     },
+    'llm-service': {
+        'host': '127.0.0.1',
+        'port': 8003,
+        'endpoint': 'http://127.0.0.1:8003'
+    },
 }

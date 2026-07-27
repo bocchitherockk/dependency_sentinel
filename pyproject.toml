@@ -24,6 +24,7 @@ members = [
 gateway = { workspace = true }
 repository-storage-service = { workspace = true }
 repository_scanner_service = { workspace = true }
+llm_service = { workspace = true }
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

@@ -1,26 +1,21 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException
 
-from repository_scanner_service.scanner import scan_repository
 from common.config import services
+from repository_scanner_service.utils import scan_repository
+
 
 app = FastAPI(
     title="Repository Scanner Service",
-    description="Scans repositories and extracts their dependencies.",
-    version="0.1.0",
+    description=(
+        "Scans repositories, detects dependency manifest files "
+        "with the LLM Service, and extracts their dependencies."
+    ),
+    version="0.2.0",
 )
 
-
-@app.get("/")
-def home() -> dict[str, str]:
-    return {
-        "service": "repository-scanner-service",
-        "message": "Repository Scanner Service is running.",
-    }
-
-
 @app.get("/scan/{repository_name}")
-def scan(repository_name: str) -> dict:
+async def scan(repository_name: str):
     repository_name = repository_name.strip()
 
     if not repository_name:
@@ -30,14 +25,7 @@ def scan(repository_name: str) -> dict:
         )
 
     try:
-        return scan_repository(repository_name)
-
-    except ValueError as error:
-        raise HTTPException(
-            status_code=400,
-            detail=str(error),
-        ) from error
-
+        return await scan_repository(repository_name)
     except Exception as error:
         raise HTTPException(
             status_code=500,
@@ -46,8 +34,13 @@ def scan(repository_name: str) -> dict:
 
 
 def main() -> None:
+    """
+    Start the Repository Scanner Service.
+    """
+
+    scanner_service = services['repository-scanner-service']
     uvicorn.run(
         app,
-        host=services['repository-scanner-service']['host'],
-        port=services['repository-scanner-service']['port'],
+        host=scanner_service["host"],
+        port=scanner_service["port"],
     )
