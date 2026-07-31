@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "aiokafka>=0.14.0",
+    "tenacity>=9.1.4",
+]
 
 [dependency-groups]
 dev = [
