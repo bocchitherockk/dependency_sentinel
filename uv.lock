@@ -268,6 +268,12 @@ wheels = [
 name = "common"
 version = "0.1.0"
 source = { editable = "libs/common" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.13.4" }]
 
 [[package]]
 name = "cryptography"
@@ -323,10 +329,6 @@ wheels = [
 name = "dependency-sentinel"
 version = "0.1.0"
 source = { virtual = "." }
-dependencies = [
-    { name = "aiokafka" },
-    { name = "tenacity" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -334,10 +336,6 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "aiokafka", specifier = ">=0.14.0" },
-    { name = "tenacity", specifier = ">=9.1.4" },
-]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]
@@ -354,7 +352,19 @@ wheels = [
 [[package]]
 name = "events"
 version = "0.1.0"
-source = { virtual = "libs/events" }
+source = { editable = "libs/events" }
+dependencies = [
+    { name = "aiokafka" },
+    { name = "pydantic" },
+    { name = "tenacity" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiokafka", specifier = ">=0.14.0" },
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "tenacity", specifier = ">=9.1.4" },
+]
 
 [[package]]
 name = "fastapi"
@@ -378,16 +388,16 @@ version = "0.1.0"
 source = { editable = "services/gateway" }
 dependencies = [
     { name = "common" },
+    { name = "events" },
     { name = "fastapi" },
-    { name = "requests" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "common", editable = "libs/common" },
+    { name = "events", editable = "libs/events" },
     { name = "fastapi", specifier = ">=0.139.2" },
-    { name = "requests", specifier = ">=2.34.2" },
     { name = "uvicorn", specifier = ">=0.51.0" },
 ]
 
@@ -710,6 +720,7 @@ version = "0.1.0"
 source = { editable = "services/repository_scanner_service" }
 dependencies = [
     { name = "common" },
+    { name = "events" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "uvicorn" },
@@ -718,6 +729,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "common", editable = "libs/common" },
+    { name = "events", editable = "libs/events" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "uvicorn", specifier = ">=0.34.0" },
@@ -729,6 +741,7 @@ version = "0.1.0"
 source = { editable = "services/repository_storage_service" }
 dependencies = [
     { name = "common" },
+    { name = "events" },
     { name = "fastapi" },
     { name = "gitpython" },
     { name = "uvicorn" },
@@ -737,6 +750,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "common", editable = "libs/common" },
+    { name = "events", editable = "libs/events" },
     { name = "fastapi", specifier = ">=0.139.2" },
     { name = "gitpython", specifier = ">=3.1.52" },
     { name = "uvicorn", specifier = ">=0.51.0" },

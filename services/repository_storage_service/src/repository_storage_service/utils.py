@@ -1,10 +1,12 @@
 from pathlib import Path
 
+from common.schemas.Directory import Directory
+from common.schemas.File import File
 
 def get_fs_object_content(
     fs_object_path: Path,
     display_files_content: bool = False,
-) -> dict[str, any]:
+) -> Directory | File:
     IGNORED_DIRECTORIES = {
         ".git",
         ".venv",
@@ -15,25 +17,22 @@ def get_fs_object_content(
     }
 
     if not fs_object_path.exists():
-        return {
-            "error": "File or directory not found",
-        }
+        raise ValueError(f"Path '{fs_object_path}' does not exist.")
 
     if fs_object_path.is_file():
-        result = {
-            "path": '/'.join(fs_object_path.parts[1::]),
-            "name": fs_object_path.name,
-            "type": "file",
-        }
+        result: File = File(
+            path='/'.join(fs_object_path.parts[1::]),
+            name=fs_object_path.name,
+        )
         if display_files_content:
-            result["content"] = fs_object_path.read_text(
+            result.content = fs_object_path.read_text(
                 encoding="utf-8",
                 errors="replace",
             )
         return result
 
     if fs_object_path.is_dir():
-        children = []
+        children: list[Directory | File] = []
         for child in sorted(
             fs_object_path.iterdir(),
             key=lambda item: item.name.lower(),
@@ -42,9 +41,8 @@ def get_fs_object_content(
                 continue
             children.append(get_fs_object_content(child, display_files_content))
 
-        return {
-            "path": '/'.join(fs_object_path.parts[1::]),
-            "name": fs_object_path.name,
-            "type": "directory",
-            "children": children,
-        }
+        return Directory(
+            path='/'.join(fs_object_path.parts[1::]),
+            name=fs_object_path.name,
+            children=children
+        )

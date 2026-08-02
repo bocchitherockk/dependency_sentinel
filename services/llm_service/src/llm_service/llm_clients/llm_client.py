@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
+from common.schemas.File import File
+from common.schemas.ManifestFile import ManifestFile
 
 class LLMClient(ABC):
     @abstractmethod
@@ -7,24 +9,48 @@ class LLMClient(ABC):
         self,
         system_instructions: str,
         prompt: str,
-        response_format: str | dict[str, any]=None,
+        response_format: str | dict[str, Any]=None,
         **kwargs,
     ):
         pass
 
-    async def detect_manifests(self, files: list[str]):
-        return await self.chat(
+    async def detect_manifests(self, files: list[File]) -> list[File]:
+        print('#########################')
+        print('system_instructions:', self.system_instructions_manifest_files_detection())
+        print('prompt:', self.prompt_manifest_files_detection(files))
+        print('response_format:', self.detect_manifests_response_format())
+
+        chat_result: list[str] = await self.chat(
             system_instructions=self.system_instructions_manifest_files_detection(),
             prompt=self.prompt_manifest_files_detection(files),
             response_format=self.detect_manifests_response_format(),
         )
+        
 
-    async def extract_dependencies(self, manifest_file: dict[str, Any]):
-        return await self.chat(
+        result: list[File] = []
+        print('file_paths:', [str(file.path) for file in files])
+        print('chat result:', chat_result)
+        print('#########################')
+        for file_path in chat_result:
+            found: bool = False
+            for file in files:
+                if str(file.path) == file_path:
+                    result.append(file)
+                    found = True
+                    break
+            if not found:
+                # raise ValueError(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
+                print(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
+
+        return result
+
+    async def extract_dependencies(self, manifest_file: File) -> ManifestFile:
+        chat_result: dict[str, Any] = await self.chat(
             system_instructions=self.system_instructions_extract_dependencies(),
             prompt=self.prompt_extract_dependencies(manifest_file),
             response_format=self.extract_dependencies_response_format(),
         )
+        return ManifestFile(**chat_result)
 
     # These methods are here in case a specific LLM client wants to provide its own prompts and response formats, otherwise these are the default ones that will be used.
     # They accept **kwargs so that they can be customized by specific LLM clients if needed.
@@ -61,24 +87,19 @@ Lock files are not dependency manifests, even though they contain dependency inf
 - composer.lock
 - Gemfile.lock
 
-
-For every detected manifest:
-- identify the programming language
-- identify the dependency manager
-- explain briefly why it is a manifest
-
 Only return valid JSON matching the provided schema.
 """
 
-    def prompt_manifest_files_detection(self, files: list[str], **kwargs) -> str:
+    def prompt_manifest_files_detection(self, files: list[File], **kwargs) -> str:
         return f"""
 Here is the list of files in the project:
 ```
-{"\n".join(files)}
+{"\n".join([str(file.path) for file in files])}
 ```
 """
 
     def system_instructions_extract_dependencies(self, **kwargs) -> str:
+        # TODO: here change the ist of supporeted registries to be dynamic
         return """
 You are an expert software engineer.
 
@@ -90,112 +111,120 @@ Put the dependency version as they are.
 
 Example:
 {
-    "manifest_file": {
-        "path": "full/path/to/file/dont/change/it",
-        "dependencies": [
-            {
-                "name": "axios",
-                "version": "^1.14.0"
+    "path": "full/path/to/file/dont/change/it",
+    "dependencies": [
+        {
+            "name": "axios",
+            "version": "^1.14.0",
+            "registry": {
+                "name": "npm",
+                "url": "https://registry.npmjs.org/"
             }
-        ],
-        "dev_dependencies": [
-            {
-                "name": "jest",
-                "version": "^29.0.0"
+        }
+    ],
+    "dev_dependencies": [
+        {
+            "name": "jest",
+            "version": "^29.0.0",
+            "registry": {
+                "name": "maven",
+                "url": "https://repo.maven.apache.org/maven2/"
             }
-        ]
-    }
+        }
+    ]
 }
+
+here are the supporeted registries:
+- npm: https://registry.npmjs.org/
+- maven: https://repo.maven.apache.org/maven2/
+
+If the dependency registry is not in the list above, return None for the registry name and url.
 """
 
-    def prompt_extract_dependencies(self, manifest_file: dict[str, Any], **kwargs) -> str:
+    def prompt_extract_dependencies(self, manifest_file: File, **kwargs) -> str:
         return f"""
-Here is the file path: `{manifest_file['path']}`,
+Here is the file path: `{str(manifest_file.path)}`,
 and here is its content:
 ```
-{manifest_file['content']}
+{manifest_file.content}
 ```
 """
 
     def detect_manifests_response_format(self, **kwargs) -> dict[str, Any]:
         return {
-            "type": "object",
-            "properties": {
-                "manifest_files": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "path":                 { "type": "string" },
-                            "programming_language": { "type": "string" },
-                            "dependency_manager":   { "type": ["string", "null"] },
-                            "reasoning":            { "type": "string" }, # A brief explanation of why the file is considered a manifest. Note: This field is just for debugging purposes and will not be used in deployment.
-                        },
-                        "required": [
-                            "path",
-                            "programming_language",
-                            "dependency_manager",
-                            "reasoning",
-                        ],
-                        "additionalProperties": False,
-                    },
-                },
+            "type": "array",
+            "items": {
+                "type": "string",
             },
-            "required": [
-                "manifest_files",
-            ],
-            "additionalProperties": False,
+            "uniqueItems": True,
         }
 
     def extract_dependencies_response_format(self, **kwargs) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                'manifest_file': {
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string" },
-                        "dependencies": {
-                            "type": "array",
-                            "items": {
+                "path": { "type": "string" },
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name":    { "type": "string" },
+                            "version": { "type": ["string", "null"] },
+                            "registry": {
                                 "type": "object",
                                 "properties": {
-                                    "name":    { "type": "string" },
-                                    "version": { "type": ["string", "null"] },
+                                    "name": { "type": "string" },
+                                    "url":  { "type": "string" },
                                 },
                                 "required": [
                                     "name",
-                                    "version",
+                                    "url",
                                 ],
                                 "additionalProperties": False,
                             },
                         },
-                        "dev-dependencies": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name":    { "type": "string" },
-                                    "version": { "type": ["string", "null"] },
-                                },
-                                "required": [
-                                    "name",
-                                    "version",
-                                ],
-                                "additionalProperties": False,
-                            },
-                        },
+                        "required": [
+                            "name",
+                            "version",
+                            "registry",
+                        ],
+                        "additionalProperties": False,
                     },
-                    "required": [
-                        "path",
-                        "dependencies",
-                        "dev-dependencies",
-                    ],
-                    "additionalProperties": False,
-                }
+                },
+                "dev_dependencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name":    { "type": "string" },
+                            "version": { "type": ["string", "null"] },
+                            "registry": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "url":  { "type": "string" },
+                                },
+                                "required": [
+                                    "name",
+                                    "url",
+                                ],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "required": [
+                            "name",
+                            "version",
+                            "registry",
+                        ],
+                        "additionalProperties": False,
+                    },
+                },
             },
             "required": [
-                "manifest_file",
+                "path",
+                "dependencies",
+                "dev_dependencies",
             ],
             "additionalProperties": False,
         }

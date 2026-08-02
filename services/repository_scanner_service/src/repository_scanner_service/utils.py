@@ -1,131 +1,113 @@
-import httpx
 import asyncio
-from typing import Any
-import logging
-import uuid  #  Pour générer des ID uniques
+
+import httpx
 
 from common.config import services
-from events import EventProducer, KafkaConfig  # Import
+from common.schemas.Directory import Directory
+from common.schemas.File import File
+from common.schemas.ManifestFile import ManifestFile
 
-# --- Configuration du logging ---
-logger = logging.getLogger(__name__)
 
-# --- Producer pour envoyer les requêtes LLM ---
-event_producer = EventProducer()
-
-# ---  Fonction pour publier une requête LLM ---
-async def _publish_llm_request(
-    request_id: str,
-    repository_name: str,
-    task_type: str,
-    payload: dict[str, Any]
-):
-    """
-    Publie une requête LLM sur le topic llm.requests
-    """
-    await event_producer.publish(
-        topic=KafkaConfig.TOPIC_LLM_REQUESTS,
-        event={
-            "event_type": "llm.request",
-            "request_id": request_id,
-            "repository_name": repository_name,
-            "task_type": task_type,
-            "payload": payload
-        },
-        key=f"{repository_name}-{task_type}"
-    )
-    logger.info(f" Published LLM request {request_id} for {task_type}")
-
-# --- Fonction existante : aplatir l'arborescence ---
-def _flatten_repository_tree(node: dict) -> list[str]:
-    """
-    Aplatit l'arborescence du repository
-    """
-    if node['type'] == 'file':
-        return [node['path']]
-    elif node['type'] == 'directory':
-        files = []
-        for child in node['children']:
-            child_files = _flatten_repository_tree(child)
+def _flatten_repository_tree(node: Directory | File) -> list[File]:
+    if isinstance(node, File):
+        return [node]
+    elif isinstance(node, Directory):
+        files: list[File] = []
+        for child in node.children:
+            child_files: list[File] = _flatten_repository_tree(child)
             files.extend(child_files)
         return files
 
-# ---  MODIFIÉ : Détecter les manifests avec Kafka ---
-async def _detect_manifest_files(
-    flattened_repository_files: list[str],
-    repository_name: str
-) -> list[dict[str, Any]]:
+async def _detect_manifest_files(flattened_repository_files: list[File]) -> list[File]:
     """
-    Demande au LLM Service de détecter les manifests.
-    Envoie les fichiers en lots pour éviter les surcharges.
+    Ask LLM Service to detect dependency manifest files.
+    Send repository files to the LLM Service in small batches.
+    Sending hundreds of files in one request may be unreliable.
     """
+    ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
+    ################## ORIGINAL #####################
     batch_size: int = 20
-    
-    #  Publier une requête LLM via Kafka pour chaque lot
-    # Pour l'instant, on garde l'appel direct pour rester fonctionnel
-    # Dans une version future, on utilisera le callback asynchrone
-    
-    logger.info(f" Detecting manifests for {repository_name} via LLM (direct call)")
-    
     async with httpx.AsyncClient(timeout=None) as client:
+        # TODO: Consider using a semaphore to limit the number of concurrent requests to the LLM Service
+        # because for example 2000 files / 20 = 100 concurrent requests.
+        print('sending requests ...')
         tasks = [
             client.post(
-                f'{services["llm-service"]["endpoint"]}/detect-manifests',
-                params={'model_name': 'qwen3:8b'},
-                json=flattened_repository_files[batch_index : (batch_index + batch_size)],
+                f'{services['llm-service']['endpoint']}/detect-manifests',
+                params= {'model_name': 'qwen3:8b'},
+                # params= {'model_name': 'qwen2.5-coder:1.5b'},
+                json=[flattened_repository_file.model_dump(mode='json') for flattened_repository_file in flattened_repository_files[batch_index : (batch_index + batch_size)]],
             )
             for batch_index in range(0, len(flattened_repository_files), batch_size)
         ]
+        print('requests sent')
+        print('asyncio.gather ...')
         responses = await asyncio.gather(*tasks)
+        print('asyncio gathered')
 
-    result: list[dict[str, Any]] = []
+    result: list[File] = []
     for response in responses:
         response.raise_for_status()
         payload = response.json()
-        result.extend(payload['manifest_files'])
+        for manifest_file in payload:
+            result.append(File(**manifest_file))
 
     return result
+    ################## HACK #####################
+    # return [
+    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/angular/package.json", name="package.json"),
+    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/notifications-service/pom.xml", name="pom.xml"),
+    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/orders-service/pom.xml", name="pom.xml"),
+    # ]
+    ################## END #####################
 
-# ---  MODIFIÉ : Extraire les dépendances avec Kafka ---
-async def _extract_dependencies(
-    detected_manifest_files: list[dict[str, Any]],
-    repository_name: str
-) -> list[dict[str, Any]]:
+async def _extract_dependencies(detected_manifest_files: list[File]) -> list[ManifestFile]:
     """
-    Demande au LLM Service d'extraire les dépendances.
+    Ask LLM Service to extract dependencies from a manifest file.
     """
-    #  Publier une requête LLM via Kafka pour chaque manifest
-    # Pour l'instant, on garde l'appel direct pour rester fonctionnel
-    
-    logger.info(f" Extracting dependencies for {repository_name} via LLM (direct call)")
-    
     async with httpx.AsyncClient(timeout=None) as client:
+        ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
+        ################## ORIGINAL #####################
         tasks = [
             client.post(
-                f'{services["llm-service"]["endpoint"]}/extract-dependencies',
-                params={'model_name': 'qwen2.5-coder:1.5b'},
-                json={
-                    'path': manifest_file['path'],
-                    'content': manifest_file['content'],
-                },
+                f'{services['llm-service']['endpoint']}/extract-dependencies',
+                params= {'model_name': 'qwen2.5-coder:1.5b'},
+                json=manifest_file.model_dump(mode='json'),
             )
             for manifest_file in detected_manifest_files
         ]
         responses = await asyncio.gather(*tasks)
+        ################## HACK #####################
+        # i = 0
+        # skip_indices = []
+        # results: list[ManifestFile] = []
+        # for manifest_file in detected_manifest_files:
+        #     if i in skip_indices:
+        #         i += 1
+        #         continue
+        #     print('sending request to extract dependencies for manifest file:', manifest_file['path'])
+        #     response = await client.post(
+        #         f'{services['llm-service']['endpoint']}/extract-dependencies',
+        #         # params= {'model_name': 'qwen2.5-coder:1.5b'},
+        #         params= {'model_name': 'qwen3:8b'},
+        #         json=manifest_file.model_dump(mode='json'),
+        #     )
+        #     print('response received for manifest file:', manifest_file['path'])
+        #     response.raise_for_status()
+        #     payload = response.json()
+        #     results.append(ManifestFile(**payload))
+        # return results
+        ################## END #####################
 
-    result: list[dict[str, Any]] = []
+    result: list[ManifestFile] = []
     for response in responses:
         response.raise_for_status()
         payload = response.json()
-        result.append(payload['manifest_file'])
+        result.append(ManifestFile(**payload))
 
     return result
 
-# ---  MODIFIÉ : scan_repository avec paramètre URL ---
-async def scan_repository(
-    repository_name: str,
-    repository_url: str = None  # 🆕 Ajout du paramètre URL (optionnel)
-) -> dict[str, Any]:
+async def scan_repository(repository_name: str) -> list[ManifestFile]:
     """
     Scan a repository.
 
@@ -136,30 +118,30 @@ async def scan_repository(
     5. Send the manifest content to the LLM Service to extract dependencies.
     6. Return the complete scan result.
     """
-    logger.info(f" Scanning repository: {repository_name}")
-    
-    # Step 1: Retrieve the complete repository tree.
+    # Step 1:
+    # Retrieve the complete repository tree.
     async with httpx.AsyncClient() as client:
-        repository_content = await client.get(
+        result = await client.get(
             f"{services["repository-storage-service"]["endpoint"]}/repositories/{repository_name}"
         )
-        repository_content.raise_for_status()
-        repository_content = repository_content.json()
+        result.raise_for_status()
+        repository_content: Directory = Directory(**result.json())
 
-    # Step 2: Extract all file paths.
-    flattened_repository_files: list[str] = _flatten_repository_tree(repository_content)
+    # Step 2:
+    # Extract all file paths.
+    flattened_repository_files: list[File] = _flatten_repository_tree(repository_content)
 
-    # Step 3: Detect manifests dynamically through the LLM Service.
-    detected_manifest_files: list[dict[str, Any]] = await _detect_manifest_files(
-        flattened_repository_files,
-        repository_name
-    )
+    # Step 3:
+    # Detect manifests dynamically through the LLM Service.
+    detected_manifest_files: list[File] = await _detect_manifest_files(flattened_repository_files)
+    print('wawa: Detected manifest files:', detected_manifest_files)
 
-    # Step 4: Get the content of every detected manifest from the Storage Service.
+    # Step 4:
+    # Get the content of every detected manifest from the Storage Service.
     async with httpx.AsyncClient() as client:
         tasks = [
             client.get(
-                f'{services["repository-storage-service"]["endpoint"]}/repositories/{manifest["path"]}',
+                f'{services['repository-storage-service']['endpoint']}/repositories/{manifest.path}',
                 params={'display_files_content': True},
             )
             for manifest in detected_manifest_files
@@ -168,22 +150,16 @@ async def scan_repository(
 
     for manifest, response in zip(detected_manifest_files, responses):
         response.raise_for_status()
-        manifest['content'] = response.json()['content']
+        payload = response.json()
+        manifest.content = payload['content']
+        
+    # Step 5:
+    # Ask the LLM to extract dependencies from the manifest content.
+    manifest_files: list[ManifestFile] = await _extract_dependencies(detected_manifest_files)
 
-    # Step 5: Ask the LLM to extract dependencies from the manifest content.
-    extracted_dependencies = await _extract_dependencies(
-        detected_manifest_files,
-        repository_name
-    )
+    # Step 6:
+    # Merge the extracted dependencies into the detected manifest files.
+    # for manifest, extracted in zip(detected_manifest_files, extracted_dependencies):
+    #     manifest.dependencies = extracted.dependencies
 
-    # Step 6: Merge the extracted dependencies into the detected manifest files.
-    for manifest, extracted in zip(detected_manifest_files, extracted_dependencies):
-        manifest['dependencies'] = extracted['dependencies']
-
-    #  Retourner un résultat structuré
-    return {
-        "manifests": detected_manifest_files,
-        "total_dependencies": sum(
-            len(m.get('dependencies', [])) for m in detected_manifest_files
-        )
-    }
+    return [manifest_file.model_dump() for manifest_file in manifest_files]
