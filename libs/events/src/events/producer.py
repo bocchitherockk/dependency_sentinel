@@ -1,12 +1,12 @@
 # --- Imports ---
 import json                          # Convertir dictionnaire → JSON
 import logging                       # Journalisation
-from typing import Any, Optional     # Types (Any = n'importe quel type, Optional = peut être None)
+from typing import Optional     # Types (Any = n'importe quel type, Optional = peut être None)
 from aiokafka import AIOKafkaProducer  # Client Kafka asynchrone
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type  # Retry automatique
-from datetime import datetime        # Horodatage
 
 from .config import KafkaConfig      # Notre configuration
+from events.schemas.BaseEvent import BaseEvent
 
 # --- Logger ---
 logger = logging.getLogger(__name__)  # Crée un logger nommé "events.producer"
@@ -51,7 +51,7 @@ class EventProducer:
         retry=retry_if_exception_type(Exception),  
         reraise=True  
     )
-    async def publish(self, topic: str, event: dict[str, Any], key: Optional[str] = None):
+    async def publish(self, event: BaseEvent):
         """
         Publie un événement sur un topic
         
@@ -61,21 +61,18 @@ class EventProducer:
             key: Clé pour le partitionnement (ex: nom du repository)
         """
         try:
-            if "timestamp" not in event:
-                event["timestamp"] = datetime.utcnow().isoformat()
-            
             # 4b. Envoie le message
-            result = await self._producer.send(topic, value=event, key=key)
+            result = await self._producer.send(topic=event.event_type, value=event.model_dump(mode='json'), key=event.key)
             metadata = await result  
             
             # 4c. Log du succès
             logger.info(
-                f" Event published | Topic: {topic} | "
-                f"Key: {key} | Partition: {metadata.partition} | Offset: {metadata.offset}"
+                f" Event published | Topic: {event.event_type} | "
+                f"Key: {event.key} | Partition: {metadata.partition} | Offset: {metadata.offset}"
             )
             return metadata
             
         except Exception as e:
             # 4d. Log de l'erreur
-            logger.error(f" Failed to publish to {topic}: {e}")
+            logger.error(f" Failed to publish to {event.event_type}: {e}")
             raise 

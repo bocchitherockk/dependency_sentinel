@@ -6,13 +6,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "common",
+    "events",
     "fastapi>=0.139.2",
-    "requests>=2.34.2",
     "uvicorn>=0.51.0",
 ]
 
 [tool.uv.sources]
 common = { workspace = true }
+events = { workspace = true }
 
 [project.scripts]
 gateway = "gateway.__main__:main"

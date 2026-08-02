@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Callable, Optional, Any  # Callable = une fonction qu'on peut appeler
+from typing import Callable, Optional
 from aiokafka import AIOKafkaConsumer
 
 from .config import KafkaConfig
@@ -11,7 +11,7 @@ class EventConsumer:
     """
     Consumer Kafka générique
     """
-    
+
     # 1. Constructeur
     def __init__(
         self,
@@ -26,7 +26,7 @@ class EventConsumer:
         self.callback = callback
         self._consumer: Optional[AIOKafkaConsumer] = None
         self._running = False
-    
+
     # 2. Démarrage
     async def start(self):
         """Démarre le consumer"""
@@ -41,7 +41,7 @@ class EventConsumer:
         await self._consumer.start()
         self._running = True
         logger.info(f" Kafka consumer started on {self.topic} (group: {self.group_id})")
-    
+
     # 3. Arrêt
     async def stop(self):
         """Arrête le consumer"""
@@ -49,7 +49,7 @@ class EventConsumer:
             await self._consumer.stop()
             self._running = False
             logger.info(f" Kafka consumer stopped for {self.topic}")
-    
+
     async def consume(self, callback: Optional[Callable] = None):
         """
         Boucle infinie qui écoute les messages

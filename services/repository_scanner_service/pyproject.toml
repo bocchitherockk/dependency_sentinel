@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 
 dependencies = [
     "common",
+    "events",
     "fastapi>=0.115.0",
     "httpx>=0.28.0",
     "uvicorn>=0.34.0",
@@ -14,6 +15,7 @@ dependencies = [
 
 [tool.uv.sources]
 common = { workspace = true }
+events = { workspace = true }
 
 [project.scripts]
 repository-scanner-service = "repository_scanner_service.main:main"
