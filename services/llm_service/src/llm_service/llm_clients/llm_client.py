@@ -15,22 +15,12 @@ class LLMClient(ABC):
         pass
 
     async def detect_manifests(self, files: list[File]) -> list[File]:
-        print('#########################')
-        print('system_instructions:', self.system_instructions_manifest_files_detection())
-        print('prompt:', self.prompt_manifest_files_detection(files))
-        print('response_format:', self.detect_manifests_response_format())
-
         chat_result: list[str] = await self.chat(
             system_instructions=self.system_instructions_manifest_files_detection(),
             prompt=self.prompt_manifest_files_detection(files),
             response_format=self.detect_manifests_response_format(),
         )
-        
-
         result: list[File] = []
-        print('file_paths:', [str(file.path) for file in files])
-        print('chat result:', chat_result)
-        print('#########################')
         for file_path in chat_result:
             found: bool = False
             for file in files:

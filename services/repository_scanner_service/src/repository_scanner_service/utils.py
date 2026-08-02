@@ -30,7 +30,6 @@ async def _detect_manifest_files(flattened_repository_files: list[File]) -> list
     async with httpx.AsyncClient(timeout=None) as client:
         # TODO: Consider using a semaphore to limit the number of concurrent requests to the LLM Service
         # because for example 2000 files / 20 = 100 concurrent requests.
-        print('sending requests ...')
         tasks = [
             client.post(
                 f'{services['llm-service']['endpoint']}/detect-manifests',
@@ -40,10 +39,7 @@ async def _detect_manifest_files(flattened_repository_files: list[File]) -> list
             )
             for batch_index in range(0, len(flattened_repository_files), batch_size)
         ]
-        print('requests sent')
-        print('asyncio.gather ...')
         responses = await asyncio.gather(*tasks)
-        print('asyncio gathered')
 
     result: list[File] = []
     for response in responses:
@@ -134,7 +130,6 @@ async def scan_repository(repository_name: str) -> list[ManifestFile]:
     # Step 3:
     # Detect manifests dynamically through the LLM Service.
     detected_manifest_files: list[File] = await _detect_manifest_files(flattened_repository_files)
-    print('wawa: Detected manifest files:', detected_manifest_files)
 
     # Step 4:
     # Get the content of every detected manifest from the Storage Service.
