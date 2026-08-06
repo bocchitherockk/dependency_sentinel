@@ -1,62 +1,78 @@
-import types
+import asyncio
+import importlib
+import os
+import sys
 
-from common.schemas.CloneRepositoryRequest import CloneRepositoryRequest
-
-import gateway.main as main
-
-
-class FakeResponse:
-    def __init__(self, status_code=200, json_data=None):
-        self.status_code = status_code
-        self._json = json_data or {}
-
-    def json(self):
-        return self._json
+import pytest
 
 
-def test_scan_repository_success(monkeypatch):
-    # prepare fake responses for post (clone) and get (list files)
-    monkeypatch.setattr(
-        main, "requests",
-        types.SimpleNamespace(
-            post=lambda *a, **k: FakeResponse(status_code=200, json_data={"result": "cloned"}),
-            get=lambda *a, **k: FakeResponse(status_code=200, json_data={"files": ["a.py", "b.txt"]}),
-        ),
-    )
+@pytest.fixture(scope='module')
+def gateway_main_module():
+	patcher = pytest.MonkeyPatch()
+	patcher.setattr(os, 'chdir', lambda *_args, **_kwargs: None)
+	patcher.setattr(os, 'makedirs', lambda *_args, **_kwargs: None)
 
-    req = CloneRepositoryRequest(repository_url="https://example.com/repo.git")
-    result = main.scan_repository(req)
+	import events
 
-    assert result == {"files": ["a.py", "b.txt"]}
+	class FakeEventProducer:
+		def __init__(self, *args, **kwargs):
+			self.started = False
+			self.stopped = False
+			self.published_events = []
+		async def start(self):
+			self.started = True
+		async def stop(self):
+			self.stopped = True
+		async def publish(self, event):
+			self.published_events.append(event)
+
+	patcher.setattr(events, 'EventProducer', FakeEventProducer)
+
+	try:
+		sys.modules.pop('gateway.main', None)
+		module = importlib.import_module('gateway.main')
+	finally:
+		patcher.undo()
+
+	return module
 
 
-def test_scan_repository_clone_failure(monkeypatch):
-    # post (clone) fails with non-200
-    monkeypatch.setattr(
-        main, "requests",
-        types.SimpleNamespace(
-            post=lambda *a, **k: FakeResponse(status_code=500),
-            get=lambda *a, **k: FakeResponse(status_code=200, json_data={}),
-        ),
-    )
+def test_start_scan_endpoint_publishes_event_and_accepts_request(gateway_main_module):
+	request = gateway_main_module.StartScanRequest(repository_url='https://github.com/acme/example.git')
 
-    req = CloneRepositoryRequest(repository_url="https://example.com/repo.git")
-    result = main.scan_repository(req)
+	response = asyncio.run(gateway_main_module.start_scan_endpoint(request))
 
-    assert result == {"error": "Failed to clone repository"}
+	assert response == {
+		'status': 'accepted',
+		'message': 'Scan process started for repository: https://github.com/acme/example.git',
+		'repository_url': 'https://github.com/acme/example.git',
+	}
+	assert len(gateway_main_module.event_producer.published_events) == 1
+	published_event = gateway_main_module.event_producer.published_events[0]
+	assert published_event.repository_url == 'https://github.com/acme/example.git'
+	assert published_event.key == 'https://github.com/acme/example.git'
 
 
-def test_scan_repository_get_failure(monkeypatch):
-    # post succeeds but get (fetch content) fails
-    monkeypatch.setattr(
-        main, "requests",
-        types.SimpleNamespace(
-            post=lambda *a, **k: FakeResponse(status_code=200, json_data={}),
-            get=lambda *a, **k: FakeResponse(status_code=404),
-        ),
-    )
+def test_start_scan_endpoint_wraps_publish_failures(gateway_main_module, monkeypatch):
+	async def fake_publish(event):
+		raise RuntimeError('boom')
 
-    req = CloneRepositoryRequest(repository_url="https://example.com/repo.git")
-    result = main.scan_repository(req)
+	monkeypatch.setattr(gateway_main_module.event_producer, 'publish', fake_publish)
 
-    assert result == {"error": "Failed to get repository content"}
+	request = gateway_main_module.StartScanRequest(repository_url='https://github.com/acme/example.git')
+
+	with pytest.raises(gateway_main_module.HTTPException, match='Failed to request scan: boom'):
+		asyncio.run(gateway_main_module.start_scan_endpoint(request))
+
+
+def test_lifespan_starts_and_stops_event_producer(gateway_main_module, monkeypatch):
+	class FakeApp:
+		pass
+
+	async def run_lifespan():
+		async with gateway_main_module.lifespan(FakeApp()):
+			assert gateway_main_module.event_producer.started is True
+
+	asyncio.run(run_lifespan())
+
+	assert gateway_main_module.event_producer.stopped is True
