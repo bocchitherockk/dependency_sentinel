@@ -78,7 +78,7 @@ app = FastAPI(
     title="Repository Storage Service",
     description="Service responsible for storing and managing repositories",
     version="0.1.0",
-    # lifespan=lifespan,
+    lifespan=lifespan,
 )
 
 
