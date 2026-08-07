@@ -1,13 +1,12 @@
 import asyncio
-import re
+
 import httpx
 
 from common.config import services
 from common.schemas.Directory import Directory
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
-from common.schemas.Dependency import Dependency
-from common.schemas.Registry import Registry
+
 
 def _flatten_repository_tree(node: Directory | File) -> list[File]:
     if isinstance(node, File):
@@ -22,137 +21,140 @@ def _flatten_repository_tree(node: Directory | File) -> list[File]:
 async def _detect_manifest_files(flattened_repository_files: list[File]) -> list[File]:
     """
     Ask LLM Service to detect dependency manifest files.
-    Fallback to standard file name matching if LLM service is offline or errors.
+    Send repository files to the LLM Service in small batches.
+    Sending hundreds of files in one request may be unreliable.
     """
-    KNOWN_MANIFEST_NAMES = {"package.json", "pom.xml", "requirements.txt", "dockerfile", "cargo.toml"}
-    
-    try:
-        batch_size: int = 20
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            tasks = [
-                client.post(
-                    f"{services['llm-service']['endpoint']}/detect-manifests",
-                    params={'model_name': 'qwen3:8b'},
-                    json=[f.model_dump(mode='json') for f in flattened_repository_files[i : i + batch_size]],
-                )
-                for i in range(0, len(flattened_repository_files), batch_size)
-            ]
-            responses = await asyncio.gather(*tasks, return_exceptions=True)
+    ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
+    ################## ORIGINAL #####################
+    batch_size: int = 20
+    async with httpx.AsyncClient(timeout=None) as client:
+        # TODO: Consider using a semaphore to limit the number of concurrent requests to the LLM Service
+        # because for example 2000 files / 20 = 100 concurrent requests.
+        tasks = [
+            client.post(
+                f'{services['llm-service']['endpoint']}/detect-manifests',
+                params= {'model_name': 'qwen3:8b'},
+                # params= {'model_name': 'qwen2.5-coder:1.5b'},
+                json=[flattened_repository_file.model_dump(mode='json') for flattened_repository_file in flattened_repository_files[batch_index : (batch_index + batch_size)]],
+            )
+            for batch_index in range(0, len(flattened_repository_files), batch_size)
+        ]
+        responses = await asyncio.gather(*tasks)
 
-        result: list[File] = []
-        for response in responses:
-            if isinstance(response, httpx.Response) and response.status_code == 200:
-                for item in response.json():
-                    result.append(File(**item))
+    result: list[File] = []
+    for response in responses:
+        response.raise_for_status()
+        payload = response.json()
+        for manifest_file in payload:
+            result.append(File(**manifest_file))
 
-        if result:
-            return result
-    except Exception:
-        pass
-
-    # Fallback deterministe si LLM non disponible
-    result = []
-    for f in flattened_repository_files:
-        if f.name.lower() in KNOWN_MANIFEST_NAMES or f.name.lower().startswith("requirements"):
-            result.append(f)
     return result
-
-def _fallback_parse_manifest(manifest_file: File) -> ManifestFile:
-    """
-    Parseur déterministe de secours pour les fichiers manifests courants.
-    """
-    content = manifest_file.content or ""
-    name_lower = manifest_file.name.lower()
-    deps = []
-
-    if "requirements" in name_lower or name_lower.endswith(".txt"):
-        for line in content.splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                match = re.match(r"^([a-zA-Z0-9_\-\.]+)\s*(?:==|>=|<=|~=|>|<)?\s*([a-zA-Z0-9_\-\.]+)?", line)
-                if match:
-                    pkg_name = match.group(1)
-                    pkg_ver = match.group(2) or "1.0.0"
-                    deps.append(Dependency(name=pkg_name, version=pkg_ver, registry=Registry(name="PyPI", url="https://pypi.org")))
-    elif name_lower == "package.json":
-        import json
-        try:
-            data = json.loads(content)
-            for pkg, ver in data.get("dependencies", {}).items():
-                clean_ver = re.sub(r"[^0-9\.]", "", ver) or "1.0.0"
-                deps.append(Dependency(name=pkg, version=clean_ver, registry=Registry(name="npm", url="https://registry.npmjs.org")))
-        except Exception:
-            pass
-    elif name_lower == "pom.xml":
-        artifacts = re.findall(r"<artifactId>(.*?)</artifactId>", content)
-        versions = re.findall(r"<version>(.*?)</version>", content)
-        for i, art in enumerate(artifacts[:5]):
-            ver = versions[i] if i < len(versions) else "1.0.0"
-            deps.append(Dependency(name=art, version=ver, registry=Registry(name="Maven Central", url="https://search.maven.org")))
-
-    if not deps:
-        deps.append(Dependency(name="requests", version="2.25.1", registry=Registry(name="PyPI", url="https://pypi.org")))
-
-    return ManifestFile(path=str(manifest_file.path), dependencies=deps)
+    ################## HACK #####################
+    # return [
+    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/angular/package.json", name="package.json"),
+    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/notifications-service/pom.xml", name="pom.xml"),
+    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/orders-service/pom.xml", name="pom.xml"),
+    # ]
+    ################## END #####################
 
 async def _extract_dependencies(detected_manifest_files: list[File]) -> list[ManifestFile]:
     """
     Ask LLM Service to extract dependencies from a manifest file.
-    Fallback to deterministic parsing if LLM is offline or errors.
     """
-    result: list[ManifestFile] = []
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for manifest_file in detected_manifest_files:
-            parsed = None
-            try:
-                resp = await client.post(
-                    f"{services['llm-service']['endpoint']}/extract-dependencies",
-                    params={'model_name': 'qwen2.5-coder:1.5b'},
-                    json=manifest_file.model_dump(mode='json'),
-                )
-                if resp.status_code == 200:
-                    parsed = ManifestFile(**resp.json())
-            except Exception:
-                pass
+    async with httpx.AsyncClient(timeout=None) as client:
+        ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
+        ################## ORIGINAL #####################
+        tasks = [
+            client.post(
+                f'{services['llm-service']['endpoint']}/extract-dependencies',
+                params= {'model_name': 'qwen2.5-coder:1.5b'},
+                json=manifest_file.model_dump(mode='json'),
+            )
+            for manifest_file in detected_manifest_files
+        ]
+        responses = await asyncio.gather(*tasks)
+        ################## HACK #####################
+        # i = 0
+        # skip_indices = []
+        # results: list[ManifestFile] = []
+        # for manifest_file in detected_manifest_files:
+        #     if i in skip_indices:
+        #         i += 1
+        #         continue
+        #     print('sending request to extract dependencies for manifest file:', manifest_file['path'])
+        #     response = await client.post(
+        #         f'{services['llm-service']['endpoint']}/extract-dependencies',
+        #         # params= {'model_name': 'qwen2.5-coder:1.5b'},
+        #         params= {'model_name': 'qwen3:8b'},
+        #         json=manifest_file.model_dump(mode='json'),
+        #     )
+        #     print('response received for manifest file:', manifest_file['path'])
+        #     response.raise_for_status()
+        #     payload = response.json()
+        #     results.append(ManifestFile(**payload))
+        # return results
+        ################## END #####################
 
-            if not parsed or not parsed.dependencies:
-                parsed = _fallback_parse_manifest(manifest_file)
-            result.append(parsed)
+    result: list[ManifestFile] = []
+    for response in responses:
+        response.raise_for_status()
+        payload = response.json()
+        result.append(ManifestFile(**payload))
 
     return result
 
 async def scan_repository(repository_name: str) -> list[ManifestFile]:
-    # Step 1: Retrieve complete repository tree
+    """
+    Scan a repository.
+
+    1. Retrieve the repository tree from the Storage Service.
+    2. Extract all repository file paths.
+    3. Send the paths to the LLM Service, in batches, to detect manifests.
+    4. Retrieve the content of every detected manifest from the Storage Service.
+    5. Send the manifest content to the LLM Service to extract dependencies.
+    6. Return the complete scan result.
+    """
+    # Step 1:
+    # Retrieve the complete repository tree.
     async with httpx.AsyncClient() as client:
         result = await client.get(
-            f"{services['repository-storage-service']['endpoint']}/repositories/{repository_name}"
+            f"{services["repository-storage-service"]["endpoint"]}/repositories/{repository_name}"
         )
         result.raise_for_status()
         repository_content: Directory = Directory(**result.json())
 
-    # Step 2: Extract file paths
+    # Step 2:
+    # Extract all file paths.
     flattened_repository_files: list[File] = _flatten_repository_tree(repository_content)
 
-    # Step 3: Detect manifests
+    # Step 3:
+    # Detect manifests dynamically through the LLM Service.
     detected_manifest_files: list[File] = await _detect_manifest_files(flattened_repository_files)
 
-    # Step 4: Get content of detected manifests
+    # Step 4:
+    # Get the content of every detected manifest from the Storage Service.
     async with httpx.AsyncClient() as client:
         tasks = [
             client.get(
-                f"{services['repository-storage-service']['endpoint']}/repositories/{manifest.path}",
+                f'{services['repository-storage-service']['endpoint']}/repositories/{manifest.path}',
                 params={'display_files_content': True},
             )
             for manifest in detected_manifest_files
         ]
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        responses = await asyncio.gather(*tasks)
 
     for manifest, response in zip(detected_manifest_files, responses):
-        if isinstance(response, httpx.Response) and response.status_code == 200:
-            payload = response.json()
-            manifest.content = payload.get('content', '')
-
-    # Step 5: Extract dependencies
+        response.raise_for_status()
+        payload = response.json()
+        manifest.content = payload['content']
+        
+    # Step 5:
+    # Ask the LLM to extract dependencies from the manifest content.
     manifest_files: list[ManifestFile] = await _extract_dependencies(detected_manifest_files)
+
+    # Step 6:
+    # Merge the extracted dependencies into the detected manifest files.
+    # for manifest, extracted in zip(detected_manifest_files, extracted_dependencies):
+    #     manifest.dependencies = extracted.dependencies
 
     return [manifest_file.model_dump() for manifest_file in manifest_files]
