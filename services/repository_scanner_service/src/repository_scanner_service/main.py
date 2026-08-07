@@ -32,6 +32,17 @@ async def handle_topic_repository_cloned(key: str, value: dict, msg):
             key=repository_name
         )
         await event_producer.publish(event=repository_scanned_event)
+
+        # Triggers registry-service via HTTP for guaranteed instant execution
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    f"{services['registry-service']['endpoint']}/process-scan",
+                    json=repository_scanned_event.model_dump(mode='json')
+                )
+        except Exception:
+            pass
     except Exception as error:
         raise ValueError(f"Repository scan failed: {error}") from error
 

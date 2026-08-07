@@ -15,6 +15,8 @@ class KafkaConfig:
     # Consumer Groups
     CONSUMER_GROUP_REPOSITORY_STORAGE_SERVICE = "consumer-group-repository-storage-service"
     CONSUMER_GROUP_REPOSITORY_SCANNER_SERVICE = "consumer-group-repository-scanner-service"
+    CONSUMER_GROUP_SECURITY_ANALYZER_SERVICE = "consumer-group-security-analyzer-service"
+    CONSUMER_GROUP_REGISTRY_SERVICE = "consumer-group-registry-service"
 
     PRODUCER_CONFIG = {
         "acks": "all",                  # attendre la confirmation de tous les replicas
