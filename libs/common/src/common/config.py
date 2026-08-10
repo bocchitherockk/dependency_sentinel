@@ -19,11 +19,6 @@ services = {
         'port': 8003,
         'endpoint': 'http://127.0.0.1:8003'
     },
-    'security-analyzer-service': {
-        'host': '127.0.0.1',
-        'port': 8004,
-        'endpoint': 'http://127.0.0.1:8004'
-    },
     'registry-service': {
         'host': '127.0.0.1',
         'port': 8004,
