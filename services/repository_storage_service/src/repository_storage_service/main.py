@@ -8,7 +8,10 @@ from fastapi import FastAPI, HTTPException
 import uvicorn
 from git import Repo
 
-from repository_storage_service.utils import get_fs_object_content
+from repository_storage_service.utils import (
+    get_fs_object,
+    remove_repository_name_prefix,
+)
 
 from common.config import services
 from common.schemas.UpdateFileContentRequest import UpdateFileContentRequest
@@ -31,19 +34,27 @@ event_consumer: EventConsumer = EventConsumer(
 
 async def handle_topic_scan_started(key: str, value: dict, msg):
     scan_started_event: ScanStartedEvent = ScanStartedEvent(**value)
-    repository_url = scan_started_event.repository_url
-    repository_name = repository_url.split('/')[-1].replace('.git', '')
-    destination: Path = Path('./repositories/' + repository_name)
+    repository_url: str = scan_started_event.repository_url
+    # TODO: The repository name extraction logic might need to be improved to handle different URL formats and edge cases.
+    repository_name: str = repository_url.split('/')[-1].replace('.git', '')
+    destination: Path = Path('./repositories') / repository_name
+
     if not destination.exists():
         Repo.clone_from(repository_url, destination)
     else:
-        # fetch the latest changes if the repository already exists
-        # TODO: i think there is an error here, make sure that the content of the repository is updated correctly, because i think pulling when the .git is up to date but there are changes in the working directory will not update the working directory, so maybe we need to do a hard reset or something like that
-        repo = Repo(destination)
+        # Pull the latest changes if the repository already exists
+        # Hard reset and clean to ensure the local repository state exactly matches the remote state
+        repo: Repo = Repo(destination)
         origin = repo.remotes.origin
-        origin.pull()
+        origin.fetch()
+        current_branch = repo.active_branch.name
+        repo.git.reset('--hard', f'origin/{current_branch}')
+        repo.git.clean('-fd')
 
-    repository_cloned_event = RepositoryClonedEvent(repository_name=repository_name, key=repository_name)
+    repository_cloned_event: RepositoryClonedEvent = RepositoryClonedEvent(
+        repository_name=repository_name,
+        key=repository_name,
+    )
 
     await event_producer.publish(event=repository_cloned_event)
 
@@ -74,23 +85,22 @@ app = FastAPI(
 # This endpoint should be called by the repository scanner service (with display_files_content set to False) to get the list of files and directories in the repository to then use them to talk to the LLM and get the important manifest files in the repository.
 # This endpoint should also be called by the dependency analyzer service (with display_files_content set to True) to get the content of the important manifest files in the repository to then parse them and get the dependencies in the repository.
 # This endpoint might be called by the dependency modifier service (with display_files_content set to True) to get the content of the important manifest files in the repository to then modify them and write them back to the repository. (i might also remove the Dependency modifier service and let this Repository storage service handle the modification directly through the MCP call)
-@app.get("/repositories/{path:path}")
-def browse_filesystem_endpoint(
+@app.get('/repositories/{path:path}')
+def get_fs_object_endpoint(
     path: str = fastapi.Path(...),
     display_files_content: bool = fastapi.Query(False),
 ) -> Directory | File:
-    fs_object_path = Path("./repositories") / path
-
-    if not fs_object_path.exists():
+    root_path: Path = Path('./repositories')
+    fs_object_path: Path = root_path / path
+    try:
+        fs_object: Directory | File = get_fs_object(fs_object_path, display_files_content)
+    except FileNotFoundError:
         raise HTTPException(
             status_code=404,
             detail=f"Path '{path}' does not exist.",
         )
 
-    return get_fs_object_content(
-        fs_object_path,
-        display_files_content,
-    )
+    return remove_repository_name_prefix(fs_object, root_path)
 
 # This endpoint should be called by the Dependency modifier service (which is initially called by the LLM through the MCP server)
 # note: the Dependency modifier service will be responsible for providing correct content to be written in the file
@@ -100,17 +110,51 @@ def update_file_content_endpoint(
     path: str = fastapi.Path(...),
     update_file_content_request: UpdateFileContentRequest = fastapi.Body(...),
 ):
-    file_path = Path(f'./repositories/{path}')
+    root_path: Path = Path('./repositories')
+    file_path = root_path / path
     if not file_path.exists():
-        return { 'error': 'File not found' }
+        raise HTTPException(
+            status_code=404,
+            detail=f"Path '{path}' does not exist.",
+        )
 
     if not file_path.is_file():
-        return { 'error': 'Path is not a file' }
+        raise HTTPException(
+            status_code=400,
+            detail=f"Path '{path}' is not a file.",
+        )
 
-    with open(file_path, 'w') as f:
-        f.write(update_file_content_request.new_content)
+    file_path.write_text(update_file_content_request.new_content, encoding='utf-8')
 
-    return { 'message': f'File {path} updated successfully.' }
+    return File(
+        path=file_path.relative_to(root_path),
+        name=file_path.name,
+        content=update_file_content_request.new_content
+    )
+
+################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
+################## HACK #####################
+# @app.post('/clone_repository')
+# async def clone_repository_endpoint(request: dict[str, str] = fastapi.Body(...)):
+#     repository_url: str = request['repository_url']
+#     repository_name: str = repository_url.split('/')[-1].replace('.git', '')
+#     destination: Path = Path('./repositories') / repository_name
+
+#     if not destination.exists():
+#         Repo.clone_from(repository_url, destination)
+#         return {"message": f"Repository '{repository_name}' cloned successfully."}
+#     else:
+#         # Pull the latest changes if the repository already exists
+#         # Hard reset and clean to ensure the local repository state exactly matches the remote state
+#         repo: Repo = Repo(destination)
+#         origin = repo.remotes.origin
+#         origin.fetch()
+#         current_branch = repo.active_branch.name
+#         repo.git.reset('--hard', f'origin/{current_branch}')
+#         repo.git.clean('-fd')
+#         return {"message": f"Repository '{repository_name}' already exists. Pulled latest changes."}
+################## END #####################
+
 
 def main() -> None:
     uvicorn.run(

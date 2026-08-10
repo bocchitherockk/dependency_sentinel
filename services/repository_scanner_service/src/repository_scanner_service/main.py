@@ -49,8 +49,46 @@ app = FastAPI(
     title="Repository Scanner Service",
     description="Scans repositories, detects dependency manifest files with the LLM Service, and extracts their dependencies.",
     version="0.2.0",
-    lifespan=lifespan,  
+    lifespan=lifespan,
 )
+
+################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
+################## HACK #####################
+# import fastapi
+# from common.schemas.File import File
+# from repository_scanner_service.utils import _detect_manifest_files
+
+# @app.post('/detect_manifests')
+# async def detect_manifest_files_endpoint(request: list[File] = fastapi.Body(...)) -> list[File]:
+#     detected_manifest_files: list[File] = await _detect_manifest_files(request)
+#     return detected_manifest_files
+################## END #####################
+
+################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
+################## HACK #####################
+# import fastapi
+# from common.schemas.File import File
+# from common.schemas.ManifestFile import ManifestFile
+# from repository_scanner_service.utils import _extract_dependencies
+
+# @app.post('/extract_dependencies')
+# async def extract_dependencies_endpoint(request: list[File] = fastapi.Body(...)) -> list[ManifestFile]:
+#     manifest_files: list[ManifestFile] = await _extract_dependencies(request)
+#     return manifest_files
+################## END #####################
+
+################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
+################## HACK #####################
+# import fastapi
+# from common.schemas.ManifestFile import ManifestFile
+# from repository_scanner_service.utils import scan_repository
+
+# @app.post('/scan_repository')
+# async def detect_manifest_files_endpoint(request: dict[str, str] = fastapi.Body(...)) -> list[ManifestFile]:
+#     repository_name: str = request.get('repository_name')
+#     manifest_files: list[ManifestFile] = await scan_repository(repository_name)
+#     return manifest_files
+################## END #####################
 
 def main() -> None:
     scanner_service = services['repository-scanner-service']
