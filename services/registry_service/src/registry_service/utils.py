@@ -55,8 +55,8 @@ async def get_dependency_update_context(dependency: Dependency) -> DependencyUpd
         get_dependency_security_report(candidate_dependency)
     )
     return DependencyUpdateContext(
-        current_report=current_security_report,
-        candidate_report=candidate_security_report,
+        current_dependency_report=current_security_report,
+        candidate_dependency_report=candidate_security_report,
     )
 
 async def get_manifest_file_update_context(manifest_file: ManifestFile) -> ManifestFileUpdateContext:
