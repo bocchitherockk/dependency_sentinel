@@ -1,0 +1,23 @@
+from registry_service.registry_adapters.base_registry_adapter import BaseRegistryAdapter
+from registry_service.registry_adapters.libraries_io_registry_adapter import LibrariesIORegistryAdapter
+
+class RegistrySelector:
+    registry_adapters: dict[str, type[BaseRegistryAdapter]] = {}
+
+    @staticmethod
+    def get_all_registry_adapters() -> list[type[BaseRegistryAdapter]]:
+        return [LibrariesIORegistryAdapter]
+
+    @staticmethod
+    def get_adapter(registry_name: str) -> type[BaseRegistryAdapter]:
+        registry_name = registry_name.strip().lower()
+        if registry_name in RegistrySelector.registry_adapters.keys():
+            return RegistrySelector.registry_adapters[registry_name]
+        else:
+            for adapter_class in RegistrySelector.get_all_registry_adapters():
+                supported_registries: list[str] = adapter_class.get_supported_registries()
+                for supported_registry in supported_registries:
+                    if registry_name == supported_registry.lower():
+                        RegistrySelector.registry_adapters[registry_name] = adapter_class
+                        return adapter_class
+            raise ValueError(f"No adapter found for registry: {registry_name}. Supported registries: {list(RegistrySelector.registry_adapters.keys())}")

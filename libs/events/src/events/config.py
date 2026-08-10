@@ -10,7 +10,7 @@ class KafkaConfig:
     TOPIC_SCAN_STARTED       = "topic-scan-started"
     TOPIC_REPOSITORY_CLONED  = "topic-repository-cloned"
     TOPIC_REPOSITORY_SCANNED = "topic-repository-scanned"
-    TOPIC_SCAN_COMPLETED     = "topic-scan-completed"
+    TOPIC_DEPENDENCIES_QUERIED = "topic-dependencies-queried"
 
     # Consumer Groups
     CONSUMER_GROUP_REPOSITORY_STORAGE_SERVICE = "consumer-group-repository-storage-service"
