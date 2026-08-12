@@ -1,7 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from common.schemas.ManifestFileSecurityReport import ManifestFileSecurityReport
+from common.schemas.DependencyUpdateContext import DependencyUpdateContext
 
 class ManifestFileUpdateContext(BaseModel):
-    current_manifest_file_report: ManifestFileSecurityReport
-    candidate_manifest_file_report: ManifestFileSecurityReport
+    dependencies_update_context:     list[DependencyUpdateContext] = Field(default_factory=list)
+    dev_dependencies_update_context: list[DependencyUpdateContext] = Field(default_factory=list)

@@ -2,6 +2,7 @@ import os
 from typing import override
 
 import httpx
+import semver
 from dotenv import load_dotenv
 
 from common.schemas.Dependency import Dependency
@@ -35,7 +36,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
     @override
     @staticmethod
-    async def get_all_versions(dependency: Dependency) -> list[Dependency]:
+    async def get_all_versions_dependencies(dependency: Dependency) -> list[Dependency]:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
         corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry.name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
@@ -58,10 +59,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
     @override
     @staticmethod
-    async def get_latest_version(dependency: Dependency) -> Dependency:
-        # TODO: get latest version is a function that returns the latest version of a dependency.
-        # but that version could be a new major version that is not compatible with the current version.
-        # maybe We need to implement a function that returns the latest compatible version of a dependency.
+    async def get_latest_version_dependency(dependency: Dependency) -> Dependency:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
         corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry.name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
@@ -73,16 +71,73 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         response.raise_for_status()
         data = response.json()
         latest_stable_release_number: str = data['latest_stable_release_number']
-        
-        result: Dependency = Dependency(
+
+        latest_version_dependency: Dependency = Dependency(
             name=dependency.name,
             version=latest_stable_release_number,
             registry=dependency.registry,
         )
-        return result
+        return latest_version_dependency
 
-        # Search for the latest stable release in the versions list
-        # We iterate in reverse because the latest stable release is likely to be towards the end of the list
-        # for i in range(len(data['versions']) - 1, -1, -1):
-        #     if data['versions'][i]['number'] == latest_stable_release_number:
-        #         return data['versions'][i]
+    @override
+    @staticmethod
+    async def get_latest_compatible_version_dependency(dependency: Dependency) -> Dependency:
+        safe_dependency_name: str = dependency.name.replace('/', '%2F')
+        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry.name)
+        url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
+        params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
+
+        async with httpx.AsyncClient(timeout=None) as client:
+            response = await client.get(url, params=params)
+
+        response.raise_for_status()
+        data = response.json()
+        
+        # TODO: this is a quick workaround to get the exact version
+        current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
+        # Search for the latest compatible version in the versions list
+        # We iterate in reverse because the result is likely to be towards the end of the list
+        for i in range(len(data['versions']) - 1, -1, -1):
+            iter_version = semver.VersionInfo.parse(data['versions'][i]['number'])
+            if iter_version.major == current_version.major:
+                latest_compatible_version_dependency: Dependency = Dependency(
+                    name=dependency.name,
+                    version=data['versions'][i]['number'],
+                    registry=dependency.registry,
+                )
+                return latest_compatible_version_dependency
+        
+        raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{dependency.registry.name}'.")
+
+    @override
+    @staticmethod
+    async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency]:
+        safe_dependency_name: str = dependency.name.replace('/', '%2F')
+        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry.name)
+        url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
+        params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
+
+        async with httpx.AsyncClient(timeout=None) as client:
+            response = await client.get(url, params=params)
+
+        response.raise_for_status()
+        data = response.json()
+        latest_stable_release_number: str = data['latest_stable_release_number']
+
+        latest_version_dependency: Dependency = Dependency(
+            name=dependency.name,
+            version=latest_stable_release_number,
+            registry=dependency.registry,
+        )
+
+        current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
+        for i in range(len(data['versions']) - 1, -1, -1):
+            iter_version = semver.VersionInfo.parse(data['versions'][i]['number'])
+            if iter_version.major == current_version.major:
+                latest_compatible_version_dependency: Dependency = Dependency(
+                    name=dependency.name,
+                    version=data['versions'][i]['number'],
+                    registry=dependency.registry,
+                )
+                break
+        return latest_compatible_version_dependency, latest_version_dependency
