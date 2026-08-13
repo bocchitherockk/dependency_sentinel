@@ -24,4 +24,14 @@ services = {
         'port': 8004,
         'endpoint': 'http://127.0.0.1:8004'
     },
+    'security-intelligence-service': {
+        'host': '127.0.0.1',
+        'port': 8007,
+        'endpoint': 'http://127.0.0.1:8007'
+    },
+    'mcp-server': {
+        'host': '127.0.0.1',
+        'port': 8006,
+        'endpoint': 'http://127.0.0.1:8006'
+    },
 }

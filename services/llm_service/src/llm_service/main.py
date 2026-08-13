@@ -26,6 +26,14 @@ async def extract_dependencies(
     model = LLMSelector.get_llm_model(model_name)
     return await model.extract_dependencies(manifest_file)
 
+@app.post("/analyze-security-delta")
+async def analyze_security_delta(
+    update_context: dict = Body(...),
+    model_name: str | None = Query(None)
+) -> dict:
+    model = LLMSelector.get_llm_model(model_name)
+    return await model.analyze_security_delta(update_context)
+
 
 def main() -> None:
     uvicorn.run(

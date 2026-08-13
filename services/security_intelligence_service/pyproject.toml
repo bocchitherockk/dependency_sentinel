@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "security-intelligence-service"
+version = "0.1.0"
+description = "Microservice d'analyse de sécurité, de décision LLM et de relais pour la remédiation"
+readme = "README.md"
+authors = [{ name = "Dependency Sentinel Team" }]
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "httpx>=0.26.0",
+    "pydantic>=2.5.0",
+    "common",
+    "events",
+]
+
+[tool.uv.sources]
+common = { workspace = true }
+events = { workspace = true }
+
+[project.scripts]
+security-intelligence-service = "security_intelligence_service.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/security_intelligence_service"]
