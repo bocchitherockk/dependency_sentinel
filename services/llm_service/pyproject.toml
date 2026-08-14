@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.0",
     "google-genai>=2.14.0",
     "python-dotenv>=1.2.2",
+    "fastmcp>=3.4.7",
 ]
 
 [tool.uv.sources]

@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
+
+import fastmcp
+
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
 
@@ -7,10 +10,11 @@ class LLMClient(ABC):
     @abstractmethod
     async def chat(
         self,
-        system_instructions: str,
-        prompt: str,
-        response_format: str | dict[str, Any]=None,
-        **kwargs,
+        messages: list[dict[str, Any]],
+        response_format: None | dict[str, Any] = None,
+        temperature: float = 0.0,
+        think: bool = False,
+        mcp_client: fastmcp.Client | None = None,
     ):
         pass
 
