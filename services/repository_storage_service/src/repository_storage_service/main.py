@@ -11,9 +11,11 @@ from git import Repo
 from repository_storage_service.utils import (
     get_fs_object,
     remove_repository_name_prefix,
+    create_branch,
 )
 
 from common.config import services
+from common.schemas.CreateBranchRequest import CreateBranchRequest
 from common.schemas.UpdateFileContentRequest import UpdateFileContentRequest
 from common.schemas.Directory import Directory
 from common.schemas.File import File
@@ -131,6 +133,26 @@ def update_file_content_endpoint(
         name=file_path.name,
         content=update_file_content_request.new_content
     )
+
+@app.post('/create_branch')
+async def create_branch_endpoint(create_branch_request: CreateBranchRequest = fastapi.Body(...)):
+    repository_path: Path = Path('./repositories') / create_branch_request.repository_name
+    branch_name: str = create_branch_request.branch_name
+
+    try:
+        create_branch(repository_path, branch_name)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Repository '{create_branch_request.repository_name}' does not exist.",
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+    return {"message": f"Branch '{branch_name}' created successfully in repository '{create_branch_request.repository_name}'."}
 
 ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
 ################## HACK #####################

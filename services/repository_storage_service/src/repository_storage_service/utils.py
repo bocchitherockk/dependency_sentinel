@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from git import Repo
+
 from common.schemas.Directory import Directory
 from common.schemas.File import File
 
@@ -44,3 +46,13 @@ def remove_repository_name_prefix(foo: File | Directory, root: Path) -> File | D
     elif isinstance(foo, Directory):
         new_children = [remove_repository_name_prefix(child, root) for child in foo.children]
         return Directory(path=new_path, name=foo.name, children=new_children)
+
+def create_branch(repository_path: Path, branch_name: str) -> None:
+    if not repository_path.exists():
+        raise FileNotFoundError(f"The repository path '{repository_path}' does not exist.")
+
+    if not branch_name:
+        raise ValueError('Branch name must be a non-empty string.')
+
+    repo = Repo(repository_path)
+    repo.git.checkout('HEAD', b=branch_name)
