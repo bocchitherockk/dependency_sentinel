@@ -24,4 +24,9 @@ services = {
         'port': 8004,
         'endpoint': 'http://127.0.0.1:8004'
     },
+    'mcp-server': {
+        'host': '127.0.0.1',
+        'port': 8005,
+        'endpoint': 'http://127.0.0.1:8005'
+    },
 }
