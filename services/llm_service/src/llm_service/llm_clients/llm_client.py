@@ -64,6 +64,50 @@ class LLMClient(ABC):
         )
         return ManifestFile(**chat_result)
 
+    async def analyze_security_delta(self, update_context: ManifestFileUpdateContext | dict[str, Any]) -> dict[str, Any]:
+        if hasattr(update_context, "model_dump"):
+            context_data = update_context.model_dump(mode="json")
+        else:
+            context_data = update_context
+        chat_result: dict[str, Any] = await self.chat(
+            system_instructions=self.system_instructions_analyze_security_delta(),
+            prompt=self.prompt_analyze_security_delta(context_data),
+            response_format=self.analyze_security_delta_response_format(),
+        )
+        return chat_result
+
+    def system_instructions_analyze_security_delta(self, **kwargs) -> str:
+        return """
+You are a senior cybersecurity engineer and software architect.
+Your task is to analyze dependency update contexts and vulnerability deltas (comparing current version vs candidate version).
+You must evaluate the security impact, determine a recommendation ('FAVORABLE', 'CAUTIOUS', or 'DISCOURAGED'), calculate a risk score (1-10), and write a clear, detailed rationale in Markdown explaining why the developer should or should not upgrade.
+"""
+
+    def prompt_analyze_security_delta(self, context_data: dict[str, Any], **kwargs) -> str:
+        import json
+        return f"""
+Analyze the following dependency update context and vulnerability reports:
+
+{json.dumps(context_data, indent=2)}
+
+Determine:
+1. recommendation: "FAVORABLE" if upgrading resolves CVEs without breaking changes, "CAUTIOUS" if breaking risk exists, "DISCOURAGED" if candidate introduces new vulnerabilities.
+2. risk_score: Integer from 1 to 10 (1 = lowest risk, 10 = critical risk).
+3. rationale: Markdown formatted explanation describing the vulnerability delta, resolved CVEs, and recommended action for the developer.
+"""
+
+    def analyze_security_delta_response_format(self, **kwargs) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "recommendation": { "type": "string", "enum": ["FAVORABLE", "CAUTIOUS", "DISCOURAGED"] },
+                "risk_score": { "type": "integer" },
+                "rationale": { "type": "string" }
+            },
+            "required": ["recommendation", "risk_score", "rationale"],
+            "additionalProperties": False
+        }
+
     # These methods are here in case a specific LLM client wants to provide its own prompts and response formats, otherwise these are the default ones that will be used.
     # They accept **kwargs so that they can be customized by specific LLM clients if needed.
     def system_instructions_manifest_files_detection(self, **kwargs) -> str:
