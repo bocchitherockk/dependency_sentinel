@@ -54,14 +54,14 @@ app = FastAPI(
 
 ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
 ################## HACK #####################
-# import fastapi
-# from common.schemas.File import File
-# from repository_scanner_service.utils import _detect_manifest_files
+import fastapi
+from common.schemas.File import File
+from repository_scanner_service.utils import _detect_manifest_files
 
-# @app.post('/detect_manifests')
-# async def detect_manifest_files_endpoint(request: list[File] = fastapi.Body(...)) -> list[File]:
-#     detected_manifest_files: list[File] = await _detect_manifest_files(request)
-#     return detected_manifest_files
+@app.post('/detect_manifests')
+async def detect_manifest_files_endpoint(request: list[File] = fastapi.Body(...)) -> list[File]:
+    detected_manifest_files: list[File] = await _detect_manifest_files(request)
+    return detected_manifest_files
 ################## END #####################
 
 ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################

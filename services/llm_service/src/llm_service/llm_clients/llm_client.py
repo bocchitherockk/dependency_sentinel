@@ -19,9 +19,18 @@ class LLMClient(ABC):
         pass
 
     async def detect_manifests(self, files: list[File]) -> list[File]:
+        messages: list[dict[str, Any]] = [
+            {
+                'role': 'system',
+                'content': self.system_instructions_manifest_files_detection()
+            },
+            {
+                'role': 'user',
+                'content': self.prompt_manifest_files_detection(files)
+            }
+        ]
         chat_result: list[str] = await self.chat(
-            system_instructions=self.system_instructions_manifest_files_detection(),
-            prompt=self.prompt_manifest_files_detection(files),
+            messages=messages,
             response_format=self.detect_manifests_response_format(),
         )
         result: list[File] = []
@@ -39,9 +48,18 @@ class LLMClient(ABC):
         return result
 
     async def extract_dependencies(self, manifest_file: File) -> ManifestFile:
+        messages: list[dict[str, Any]] = [
+            {
+                'role': 'system',
+                'content': self.system_instructions_extract_dependencies()
+            },
+            {
+                'role': 'user',
+                'content': self.prompt_extract_dependencies(manifest_file)
+            }
+        ]
         chat_result: dict[str, Any] = await self.chat(
-            system_instructions=self.system_instructions_extract_dependencies(),
-            prompt=self.prompt_extract_dependencies(manifest_file),
+            messages=messages,
             response_format=self.extract_dependencies_response_format(),
         )
         return ManifestFile(**chat_result)
