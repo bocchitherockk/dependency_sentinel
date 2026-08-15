@@ -3,6 +3,7 @@ from typing import Any
 
 import fastmcp
 
+from common.config import services
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
 from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
@@ -87,7 +88,6 @@ class LLMClient(ABC):
         self,
         manifest_file: File,
         update_plan: ManifestFileUpdatePlan,
-        mcp_client: fastmcp.Client | None = None,
     ) -> File:
         messages: list[dict[str, Any]] = [
             {
@@ -100,23 +100,8 @@ class LLMClient(ABC):
             }
         ]
         
-        if mcp_client is None:
-            try:
-                from common.config import services
-                mcp_endpoint = f"{services['mcp-server']['endpoint']}/mcp"
-                async with fastmcp.Client(mcp_endpoint) as client:
-                    chat_result = await self.chat(
-                        messages=messages,
-                        mcp_client=client,
-                    )
-            except Exception as e:
-                print(f"Notice: MCP Client connection failed or unneeded: {e}. Falling back to standard chat.")
-                chat_result = await self.chat(
-                    messages=messages,
-                    mcp_client=None,
-                )
-        else:
-            chat_result = await self.chat(
+        async with fastmcp.Client(f"{services['mcp-server']['endpoint']}/mcp") as mcp_client:
+            chat_result: str = await self.chat(
                 messages=messages,
                 mcp_client=mcp_client,
             )
@@ -124,30 +109,8 @@ class LLMClient(ABC):
         return File(
             path=manifest_file.path,
             name=manifest_file.name,
-            content=chat_result if isinstance(chat_result, str) else str(chat_result)
+            content=chat_result
         )
-
-
-    async def analyze_security_delta(self, update_context: ManifestFileUpdateContext | dict[str, Any]) -> dict[str, Any]:
-        if hasattr(update_context, "model_dump"):
-            context_data = update_context.model_dump(mode="json")
-        else:
-            context_data = update_context
-        messages: list[dict[str, Any]] = [
-            {
-                'role': 'system',
-                'content': self.system_instructions_analyze_security_delta()
-            },
-            {
-                'role': 'user',
-                'content': self.prompt_analyze_security_delta(context_data)
-            }
-        ]
-        chat_result: dict[str, Any] = await self.chat(
-            messages=messages,
-            response_format=self.analyze_security_delta_response_format(),
-        )
-        return chat_result
 
     def system_instructions_analyze_security_delta(self, **kwargs) -> str:
         return """
@@ -434,6 +397,7 @@ If a dependency does not need any update, do not include it in the result.
         return {
             "type": "object",
             "properties": {
+                "manifest_file_path": { "type": "string" },
                 "dependency_updates": {
                     "type": "array",
                     "items": {
@@ -463,8 +427,7 @@ If a dependency does not need any update, do not include it in the result.
                     },
                 },
             },
-            "required": ["dependency_updates", "dev_dependency_updates"],
-            "additionalProperties": False,
+            "required": ["dependency_updates", "dev_dependency_updates", "manifest_file_path"],
         }
 
 

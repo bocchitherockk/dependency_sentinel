@@ -29,13 +29,13 @@ async def extract_dependencies(
     model = LLMSelector.get_llm_model(model_name)
     return await model.extract_dependencies(manifest_file)
 
-@app.post("/analyze-security-delta")
-async def analyze_security_delta(
-    update_context: dict = Body(...),
+@app.post("/get-update-plan")
+async def get_update_plan(
+    update_context: ManifestFileUpdateContext = Body(...),
     model_name: str | None = Query(None)
-) -> dict:
+) -> ManifestFileUpdatePlan:
     model = LLMSelector.get_llm_model(model_name)
-    return await model.analyze_security_delta(update_context)
+    return await model.get_update_plan(update_context)
 
 @app.post("/update-manifest")
 async def update_manifest(
@@ -44,14 +44,6 @@ async def update_manifest(
 ) -> File:
     model = LLMSelector.get_llm_model(model_name)
     return await model.update_manifest(request.manifest_file, request.update_plan)
-
-@app.post("/get-update-plan")
-async def get_update_plan(
-    update_context: ManifestFileUpdateContext = Body(...),
-    model_name: str | None = Query(None)
-) -> ManifestFileUpdatePlan:
-    model = LLMSelector.get_llm_model(model_name)
-    return await model.get_update_plan(update_context)
 
 
 def main() -> None:
