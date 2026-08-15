@@ -6,6 +6,9 @@ from llm_service.llm_selector import LLMSelector
 from common.config import services
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
+from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
+from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
+from common.schemas.UpdateManifestRequest import UpdateManifestRequest
 
 app = FastAPI()
 
@@ -33,6 +36,22 @@ async def analyze_security_delta(
 ) -> dict:
     model = LLMSelector.get_llm_model(model_name)
     return await model.analyze_security_delta(update_context)
+
+@app.post("/update-manifest")
+async def update_manifest(
+    request: UpdateManifestRequest = Body(...),
+    model_name: str | None = Query(None)
+) -> File:
+    model = LLMSelector.get_llm_model(model_name)
+    return await model.update_manifest(request.manifest_file, request.update_context)
+
+@app.post("/get-update-plan")
+async def get_update_plan(
+    update_context: ManifestFileUpdateContext = Body(...),
+    model_name: str | None = Query(None)
+) -> ManifestFileUpdatePlan:
+    model = LLMSelector.get_llm_model(model_name)
+    return await model.get_update_plan(update_context)
 
 
 def main() -> None:

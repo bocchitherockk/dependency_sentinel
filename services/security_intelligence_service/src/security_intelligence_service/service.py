@@ -11,17 +11,22 @@ async def process_security_intelligence(
 ) -> dict:
     """
     Orchestre l'analyse d'intelligence de sécurité :
-    1. Transmet chaque contexte de mise à jour au LLM Service (/analyze-security-delta).
-    2. Récupère la recommandation (FAVORABLE, CAUTIOUS, DISCOURAGED), le score de risque et la justification.
-    3. Si la décision est FAVORABLE, passe le relais au mcp-server (Port 8006).
+    1. Pour chaque ManifestFileUpdateContext reçu via Kafka :
+       a. Interroger llm-service /analyze-security-delta pour avoir la recommandation.
+       b. Appeler llm-service /get-update-plan pour que l'IA décide des versions.
+       c. Si le plan est VIDE → on s'arrête (pas de branche, pas de modif).
+       d. Si le plan n'est PAS vide → envoyer au mcp-server pour créer la branche et modifier les fichiers.
     """
     results = []
-    
-    async with httpx.AsyncClient(timeout=30.0) as client:
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
         for context in manifest_files_update_context:
             context_dict = context.model_dump(mode="json") if hasattr(context, "model_dump") else context
-            
-            # Étape 1 : Interroger llm-service (LLMClient Gemini / Ollama)
+
+            # ─────────────────────────────────────────────────────────────────
+            # Étape 1 : Interroger llm-service /analyze-security-delta
+            # → Obtenir la recommandation globale (FAVORABLE / CAUTIOUS / DISCOURAGED)
+            # ─────────────────────────────────────────────────────────────────
             try:
                 llm_endpoint = f"{services['llm-service']['endpoint']}/analyze-security-delta"
                 response = await client.post(llm_endpoint, json=context_dict)
@@ -34,7 +39,7 @@ async def process_security_intelligence(
                         "rationale": "Analyse déterministe favorable par défaut."
                     }
             except Exception as error:
-                logger.warning(f"Impossible d'interroger llm-service: {error}. Utilisation du fallback.")
+                logger.warning(f"Impossible d'interroger llm-service /analyze-security-delta: {error}. Utilisation du fallback.")
                 analysis_result = {
                     "recommendation": "FAVORABLE",
                     "risk_score": 2,
@@ -42,39 +47,90 @@ async def process_security_intelligence(
                 }
 
             recommendation = analysis_result.get("recommendation", "FAVORABLE")
-            risk_score = analysis_result.get("risk_score", 2)
-            rationale = analysis_result.get("rationale", "")
+            risk_score     = analysis_result.get("risk_score", 2)
+            rationale      = analysis_result.get("rationale", "")
 
             item_result = {
-                "manifest_context": context_dict,
-                "recommendation": recommendation,
-                "risk_score": risk_score,
-                "rationale": rationale,
+                "manifest_context":      context_dict,
+                "recommendation":        recommendation,
+                "risk_score":            risk_score,
+                "rationale":             rationale,
+                "update_plan":           None,
                 "remediation_triggered": False
             }
 
-            # Étape 2 : Si FAVORABLE, passer le relais au mcp-server
-            if recommendation == "FAVORABLE":
-                mcp_endpoint = f"{services.get('mcp-server', {}).get('endpoint', 'http://127.0.0.1:8006')}/execute-remediation"
-                payload = {
-                    "repository_name": repository_name,
-                    "manifest_context": context_dict,
-                    "rationale": rationale,
-                }
-                try:
-                    mcp_resp = await client.post(mcp_endpoint, json=payload)
-                    if mcp_resp.status_code in [200, 201, 202]:
-                        item_result["remediation_triggered"] = True
-                        item_result["mcp_response"] = mcp_resp.json()
-                except Exception:
-                    logger.info(f"mcp-server (Port 8006) en attente de démarrage pour {repository_name}.")
+            # On continue seulement si la recommandation est FAVORABLE
+            if recommendation != "FAVORABLE":
+                logger.info(f"Recommandation {recommendation} pour {repository_name}. Aucune action.")
+                results.append(item_result)
+                continue
+
+            # ─────────────────────────────────────────────────────────────────
+            # Étape 2 : Appeler llm-service /get-update-plan
+            # → L'IA décide quelle version garder pour chaque dépendance
+            #   et retourne un ManifestFileUpdatePlan avec les reasonings
+            # ─────────────────────────────────────────────────────────────────
+            try:
+                update_plan_endpoint = f"{services['llm-service']['endpoint']}/get-update-plan"
+                plan_response = await client.post(update_plan_endpoint, json=context_dict)
+                if plan_response.status_code == 200:
+                    update_plan = plan_response.json()
+                else:
+                    logger.warning(f"get-update-plan a retourné {plan_response.status_code}. Plan vide utilisé.")
+                    update_plan = {"dependency_updates": [], "dev_dependency_updates": []}
+            except Exception as error:
+                logger.warning(f"Impossible d'appeler get-update-plan: {error}.")
+                update_plan = {"dependency_updates": [], "dev_dependency_updates": []}
+
+            item_result["update_plan"] = update_plan
+
+            # ─────────────────────────────────────────────────────────────────
+            # Étape 3 : Vérifier si le plan est VIDE
+            # → Si vide : aucune mise à jour nécessaire, on s'arrête ici.
+            #   Pas de création de branche, pas de modification de fichiers.
+            # ─────────────────────────────────────────────────────────────────
+            has_updates = (
+                len(update_plan.get("dependency_updates", [])) > 0 or
+                len(update_plan.get("dev_dependency_updates", [])) > 0
+            )
+
+            if not has_updates:
+                logger.info(f"Plan de mise à jour VIDE pour {repository_name} ({context_dict.get('path', '?')}). Aucune action nécessaire.")
+                results.append(item_result)
+                continue  # ← on passe au prochain ManifestFileUpdateContext sans rien faire
+
+            # ─────────────────────────────────────────────────────────────────
+            # Étape 4 : Plan NON vide → envoyer au mcp-server
+            # → Le mcp-server va :
+            #   1. Créer une nouvelle branche Git
+            #   2. Appeler llm-service /update-manifest pour réécrire le fichier
+            #   3. Enregistrer le fichier modifié dans la nouvelle branche
+            # ─────────────────────────────────────────────────────────────────
+            logger.info(f"Plan non vide pour {repository_name}. Envoi au mcp-server pour remédiation.")
+            mcp_endpoint = f"{services.get('mcp-server', {}).get('endpoint', 'http://127.0.0.1:8005')}/execute-remediation"
+            payload = {
+                "repository_name":  repository_name,
+                "manifest_context": context_dict,
+                "update_plan":      update_plan,
+                "rationale":        rationale,
+            }
+            try:
+                mcp_resp = await client.post(mcp_endpoint, json=payload)
+                if mcp_resp.status_code in [200, 201, 202]:
                     item_result["remediation_triggered"] = True
-                    item_result["mcp_response"] = {"status": "queued_for_mcp_server"}
+                    item_result["mcp_response"] = mcp_resp.json()
+                else:
+                    logger.warning(f"mcp-server a retourné {mcp_resp.status_code} pour {repository_name}.")
+            except Exception as error:
+                logger.info(f"mcp-server en attente de démarrage pour {repository_name}: {error}")
+                item_result["remediation_triggered"] = True
+                item_result["mcp_response"] = {"status": "queued_for_mcp_server"}
 
             results.append(item_result)
 
     return {
-        "repository_name": repository_name,
-        "processed_count": len(results),
-        "details": results
+        "repository_name":  repository_name,
+        "processed_count":  len(results),
+        "details":          results
     }
+

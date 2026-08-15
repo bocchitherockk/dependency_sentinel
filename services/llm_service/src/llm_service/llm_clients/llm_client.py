@@ -5,6 +5,8 @@ import fastmcp
 
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
+from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
+from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
 
 class LLMClient(ABC):
     @abstractmethod
@@ -37,7 +39,7 @@ class LLMClient(ABC):
         for file_path in chat_result:
             found: bool = False
             for file in files:
-                if str(file.path) == file_path:
+                if str(file.path) == file_path or file.path.as_posix() == file_path:
                     result.append(file)
                     found = True
                     break
@@ -64,14 +66,60 @@ class LLMClient(ABC):
         )
         return ManifestFile(**chat_result)
 
+    async def get_update_plan(self, update_context: ManifestFileUpdateContext) -> ManifestFileUpdatePlan:
+        messages: list[dict[str, Any]] = [
+            {
+                'role': 'system',
+                'content': self.system_instructions_get_update_plan()
+            },
+            {
+                'role': 'user',
+                'content': self.prompt_get_update_plan(update_context)
+            }
+        ]
+        chat_result: dict[str, Any] = await self.chat(
+            messages=messages,
+            response_format=self.get_update_plan_response_format(),
+        )
+        return ManifestFileUpdatePlan(**chat_result)
+
+    async def update_manifest(self, manifest_file: File, update_context: ManifestFileUpdateContext) -> File:
+        messages: list[dict[str, Any]] = [
+            {
+                'role': 'system',
+                'content': self.system_instructions_update_manifest()
+            },
+            {
+                'role': 'user',
+                'content': self.prompt_update_manifest(manifest_file, update_context)
+            }
+        ]
+        chat_result: str = await self.chat(
+            messages=messages,
+        )
+        return File(
+            path=manifest_file.path,
+            name=manifest_file.name,
+            content=chat_result
+        )
+
     async def analyze_security_delta(self, update_context: ManifestFileUpdateContext | dict[str, Any]) -> dict[str, Any]:
         if hasattr(update_context, "model_dump"):
             context_data = update_context.model_dump(mode="json")
         else:
             context_data = update_context
+        messages: list[dict[str, Any]] = [
+            {
+                'role': 'system',
+                'content': self.system_instructions_analyze_security_delta()
+            },
+            {
+                'role': 'user',
+                'content': self.prompt_analyze_security_delta(context_data)
+            }
+        ]
         chat_result: dict[str, Any] = await self.chat(
-            system_instructions=self.system_instructions_analyze_security_delta(),
-            prompt=self.prompt_analyze_security_delta(context_data),
+            messages=messages,
             response_format=self.analyze_security_delta_response_format(),
         )
         return chat_result
@@ -284,3 +332,113 @@ and here is its content:
             ],
             "additionalProperties": False,
         }
+
+    def system_instructions_update_manifest(self, **kwargs) -> str:
+        return """
+You are an expert software engineer and DevSecOps specialist.
+Your task is to update a project's dependency manifest file (such as package.json, pom.xml, pyproject.toml, build.gradle, etc.) based on a provided update context (UpdatePlan).
+You must update the specified dependencies to their recommended secure and compatible versions while preserving the original structure, formatting, indentations, and non-dependency fields of the file.
+
+Return ONLY the raw updated manifest file content. Do not wrap it in markdown code block syntax (like ```) and do not include any introductory or concluding text or commentary.
+"""
+
+    def prompt_update_manifest(self, manifest_file: File, update_context: ManifestFileUpdateContext, **kwargs) -> str:
+        import json
+        if hasattr(update_context, "model_dump_json"):
+            context_json = update_context.model_dump_json(indent=2)
+        else:
+            context_json = json.dumps(update_context, indent=2)
+
+        return f"""
+Here is the original manifest file path: `{manifest_file.path}`
+Here is the original manifest file content:
+```
+{manifest_file.content}
+```
+
+Here is the update plan context (UpdatePlan) specifying the target dependency versions and security information:
+```json
+{context_json}
+```
+
+Please produce the complete updated manifest file content with the target dependency versions applied.
+"""
+
+    def system_instructions_get_update_plan(self, **kwargs) -> str:
+        return """
+You are a senior software engineer and cybersecurity expert.
+Your task is to analyze a ManifestFileUpdateContext containing dependency update contexts.
+Each dependency has 3 versions with their security vulnerability reports:
+1. current_version_dependency_report (the version currently in use)
+2. latest_compatible_version_dependency_report (the latest semver-compatible version)
+3. latest_version_dependency_report (the newest version available)
+
+For each dependency, you must DECIDE which version to recommend:
+- PREFER latest_compatible_version if it resolves known vulnerabilities without breaking backward compatibility.
+- Upgrade to latest_version ONLY if latest_compatible_version still has critical vulnerabilities and latest_version is secure.
+- KEEP current_version if no vulnerabilities exist or if upgrading introduces more risk.
+- DO NOT blindly upgrade to latest_version. Major version changes may introduce breaking changes.
+
+For each dependency, provide a clear reasoning explaining WHY you chose that version over the others.
+
+If NO dependency needs an update, return empty lists.
+
+Return only valid JSON matching the provided schema.
+"""
+
+    def prompt_get_update_plan(self, update_context: ManifestFileUpdateContext, **kwargs) -> str:
+        import json
+        if hasattr(update_context, "model_dump_json"):
+            context_json = update_context.model_dump_json(indent=2)
+        else:
+            context_json = json.dumps(update_context, indent=2)
+
+        return f"""
+Analyze the following ManifestFileUpdateContext and decide which version to recommend for each dependency:
+
+```json
+{context_json}
+```
+
+For each dependency, return the name, current_version, recommended_version, and reasoning.
+If a dependency does not need any update, do not include it in the result.
+"""
+
+    def get_update_plan_response_format(self, **kwargs) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "dependency_updates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name":                { "type": "string" },
+                            "current_version":     { "type": ["string", "null"] },
+                            "recommended_version": { "type": ["string", "null"] },
+                            "reasoning":           { "type": "string" },
+                        },
+                        "required": ["name", "current_version", "recommended_version", "reasoning"],
+                        "additionalProperties": False,
+                    },
+                },
+                "dev_dependency_updates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name":                { "type": "string" },
+                            "current_version":     { "type": ["string", "null"] },
+                            "recommended_version": { "type": ["string", "null"] },
+                            "reasoning":           { "type": "string" },
+                        },
+                        "required": ["name", "current_version", "recommended_version", "reasoning"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["dependency_updates", "dev_dependency_updates"],
+            "additionalProperties": False,
+        }
+
+
