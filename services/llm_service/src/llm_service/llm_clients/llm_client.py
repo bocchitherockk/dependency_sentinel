@@ -83,7 +83,7 @@ class LLMClient(ABC):
         )
         return ManifestFileUpdatePlan(**chat_result)
 
-    async def update_manifest(self, manifest_file: File, update_context: ManifestFileUpdateContext) -> File:
+    async def update_manifest(self, manifest_file: File, update_plan: ManifestFileUpdatePlan) -> File:
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
@@ -91,7 +91,7 @@ class LLMClient(ABC):
             },
             {
                 'role': 'user',
-                'content': self.prompt_update_manifest(manifest_file, update_context)
+                'content': self.prompt_update_manifest(manifest_file, update_plan)
             }
         ]
         chat_result: str = await self.chat(

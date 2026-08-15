@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from common.schemas.File import File
-from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
+from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
 
 class UpdateManifestRequest(BaseModel):
     manifest_file: File
-    update_context: ManifestFileUpdateContext
+    update_plan: ManifestFileUpdatePlan

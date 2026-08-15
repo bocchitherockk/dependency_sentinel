@@ -43,7 +43,7 @@ async def update_manifest(
     model_name: str | None = Query(None)
 ) -> File:
     model = LLMSelector.get_llm_model(model_name)
-    return await model.update_manifest(request.manifest_file, request.update_context)
+    return await model.update_manifest(request.manifest_file, request.update_plan)
 
 @app.post("/get-update-plan")
 async def get_update_plan(

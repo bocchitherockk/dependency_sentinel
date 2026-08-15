@@ -11,11 +11,10 @@ async def process_security_intelligence(
 ) -> dict:
     """
     Orchestre l'analyse d'intelligence de sécurité :
-    1. Pour chaque ManifestFileUpdateContext reçu via Kafka :
-       a. Interroger llm-service /analyze-security-delta pour avoir la recommandation.
-       b. Appeler llm-service /get-update-plan pour que l'IA décide des versions.
-       c. Si le plan est VIDE → on s'arrête (pas de branche, pas de modif).
-       d. Si le plan n'est PAS vide → envoyer au mcp-server pour créer la branche et modifier les fichiers.
+    Pour chaque ManifestFileUpdateContext reçu via Kafka :
+      1. Appeler llm-service /get-update-plan → l'IA décide des versions à garder.
+      2. Si le plan est VIDE → stop (pas de branche, pas de modif).
+      3. Si le plan n'est PAS vide → envoyer au mcp-server pour créer la branche et modifier les fichiers.
     """
     results = []
 
@@ -23,52 +22,16 @@ async def process_security_intelligence(
         for context in manifest_files_update_context:
             context_dict = context.model_dump(mode="json") if hasattr(context, "model_dump") else context
 
-            # ─────────────────────────────────────────────────────────────────
-            # Étape 1 : Interroger llm-service /analyze-security-delta
-            # → Obtenir la recommandation globale (FAVORABLE / CAUTIOUS / DISCOURAGED)
-            # ─────────────────────────────────────────────────────────────────
-            try:
-                llm_endpoint = f"{services['llm-service']['endpoint']}/analyze-security-delta"
-                response = await client.post(llm_endpoint, json=context_dict)
-                if response.status_code == 200:
-                    analysis_result = response.json()
-                else:
-                    analysis_result = {
-                        "recommendation": "FAVORABLE",
-                        "risk_score": 2,
-                        "rationale": "Analyse déterministe favorable par défaut."
-                    }
-            except Exception as error:
-                logger.warning(f"Impossible d'interroger llm-service /analyze-security-delta: {error}. Utilisation du fallback.")
-                analysis_result = {
-                    "recommendation": "FAVORABLE",
-                    "risk_score": 2,
-                    "rationale": "Analyse déterministe de secours."
-                }
-
-            recommendation = analysis_result.get("recommendation", "FAVORABLE")
-            risk_score     = analysis_result.get("risk_score", 2)
-            rationale      = analysis_result.get("rationale", "")
-
             item_result = {
                 "manifest_context":      context_dict,
-                "recommendation":        recommendation,
-                "risk_score":            risk_score,
-                "rationale":             rationale,
                 "update_plan":           None,
                 "remediation_triggered": False
             }
 
-            # On continue seulement si la recommandation est FAVORABLE
-            if recommendation != "FAVORABLE":
-                logger.info(f"Recommandation {recommendation} pour {repository_name}. Aucune action.")
-                results.append(item_result)
-                continue
-
             # ─────────────────────────────────────────────────────────────────
-            # Étape 2 : Appeler llm-service /get-update-plan
-            # → L'IA décide quelle version garder pour chaque dépendance
-            #   et retourne un ManifestFileUpdatePlan avec les reasonings
+            # Étape 1 : Appeler llm-service /get-update-plan
+            # → L'IA analyse les 3 versions + failles et DÉCIDE quelle version
+            #   garder pour chaque dépendance (avec reasoning)
             # ─────────────────────────────────────────────────────────────────
             try:
                 update_plan_endpoint = f"{services['llm-service']['endpoint']}/get-update-plan"
@@ -85,7 +48,7 @@ async def process_security_intelligence(
             item_result["update_plan"] = update_plan
 
             # ─────────────────────────────────────────────────────────────────
-            # Étape 3 : Vérifier si le plan est VIDE
+            # Étape 2 : Vérifier si le plan est VIDE
             # → Si vide : aucune mise à jour nécessaire, on s'arrête ici.
             #   Pas de création de branche, pas de modification de fichiers.
             # ─────────────────────────────────────────────────────────────────
@@ -95,12 +58,12 @@ async def process_security_intelligence(
             )
 
             if not has_updates:
-                logger.info(f"Plan de mise à jour VIDE pour {repository_name} ({context_dict.get('path', '?')}). Aucune action nécessaire.")
+                logger.info(f"Plan VIDE pour {repository_name} ({context_dict.get('path', '?')}). Aucune action nécessaire.")
                 results.append(item_result)
-                continue  # ← on passe au prochain ManifestFileUpdateContext sans rien faire
+                continue
 
             # ─────────────────────────────────────────────────────────────────
-            # Étape 4 : Plan NON vide → envoyer au mcp-server
+            # Étape 3 : Plan NON vide → envoyer au mcp-server
             # → Le mcp-server va :
             #   1. Créer une nouvelle branche Git
             #   2. Appeler llm-service /update-manifest pour réécrire le fichier
@@ -112,7 +75,6 @@ async def process_security_intelligence(
                 "repository_name":  repository_name,
                 "manifest_context": context_dict,
                 "update_plan":      update_plan,
-                "rationale":        rationale,
             }
             try:
                 mcp_resp = await client.post(mcp_endpoint, json=payload)
@@ -129,8 +91,7 @@ async def process_security_intelligence(
             results.append(item_result)
 
     return {
-        "repository_name":  repository_name,
-        "processed_count":  len(results),
-        "details":          results
+        "repository_name": repository_name,
+        "processed_count": len(results),
+        "details":         results
     }
-
