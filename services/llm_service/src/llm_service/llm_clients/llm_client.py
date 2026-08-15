@@ -3,8 +3,11 @@ from typing import Any
 
 import fastmcp
 
+from common.config import services
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
+from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
+from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
 
 class LLMClient(ABC):
     @abstractmethod
@@ -37,7 +40,7 @@ class LLMClient(ABC):
         for file_path in chat_result:
             found: bool = False
             for file in files:
-                if str(file.path) == file_path:
+                if str(file.path) == file_path or file.path.as_posix() == file_path:
                     result.append(file)
                     found = True
                     break
@@ -63,6 +66,83 @@ class LLMClient(ABC):
             response_format=self.extract_dependencies_response_format(),
         )
         return ManifestFile(**chat_result)
+
+    async def get_update_plan(self, update_context: ManifestFileUpdateContext) -> ManifestFileUpdatePlan:
+        messages: list[dict[str, Any]] = [
+            {
+                'role': 'system',
+                'content': self.system_instructions_get_update_plan()
+            },
+            {
+                'role': 'user',
+                'content': self.prompt_get_update_plan(update_context)
+            }
+        ]
+        chat_result: dict[str, Any] = await self.chat(
+            messages=messages,
+            response_format=self.get_update_plan_response_format(),
+        )
+        return ManifestFileUpdatePlan(**chat_result)
+
+    async def update_manifest(
+        self,
+        manifest_file: File,
+        update_plan: ManifestFileUpdatePlan,
+    ) -> File:
+        messages: list[dict[str, Any]] = [
+            {
+                'role': 'system',
+                'content': self.system_instructions_update_manifest()
+            },
+            {
+                'role': 'user',
+                'content': self.prompt_update_manifest(manifest_file, update_plan)
+            }
+        ]
+        
+        async with fastmcp.Client(f"{services['mcp-server']['endpoint']}/mcp") as mcp_client:
+            chat_result: str = await self.chat(
+                messages=messages,
+                mcp_client=mcp_client,
+            )
+
+        return File(
+            path=manifest_file.path,
+            name=manifest_file.name,
+            content=chat_result
+        )
+
+    def system_instructions_analyze_security_delta(self, **kwargs) -> str:
+        return """
+You are a senior cybersecurity engineer and software architect.
+Your task is to analyze dependency update contexts and vulnerability deltas (comparing current version vs candidate version).
+You must evaluate the security impact, determine a recommendation ('FAVORABLE', 'CAUTIOUS', or 'DISCOURAGED'), calculate a risk score (1-10), and write a clear, detailed rationale in Markdown explaining why the developer should or should not upgrade.
+"""
+
+    def prompt_analyze_security_delta(self, context_data: dict[str, Any], **kwargs) -> str:
+        import json
+        return f"""
+Analyze the following dependency update context and vulnerability reports:
+
+{json.dumps(context_data, indent=2)}
+
+Determine:
+1. recommendation: "FAVORABLE" if upgrading resolves CVEs without breaking changes, "CAUTIOUS" if breaking risk exists, "DISCOURAGED" if candidate introduces new vulnerabilities.
+2. risk_score: Integer from 1 to 10 (1 = lowest risk, 10 = critical risk).
+3. rationale: Markdown formatted explanation describing the vulnerability delta, resolved CVEs, and recommended action for the developer.
+"""
+
+    def analyze_security_delta_response_format(self, **kwargs) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "recommendation": { "type": "string", "enum": ["FAVORABLE", "CAUTIOUS", "DISCOURAGED"] },
+                "risk_score": { "type": "integer" },
+                "rationale": { "type": "string" }
+            },
+            "required": ["recommendation", "risk_score", "rationale"],
+            "additionalProperties": False
+        }
 
     # These methods are here in case a specific LLM client wants to provide its own prompts and response formats, otherwise these are the default ones that will be used.
     # They accept **kwargs so that they can be customized by specific LLM clients if needed.
@@ -240,3 +320,114 @@ and here is its content:
             ],
             "additionalProperties": False,
         }
+
+    def system_instructions_update_manifest(self, **kwargs) -> str:
+        return """
+You are an expert software engineer and DevSecOps specialist.
+Your task is to update a project's dependency manifest file (such as package.json, pom.xml, pyproject.toml, build.gradle, etc.) based on a provided update context (UpdatePlan).
+You must update the specified dependencies to their recommended secure and compatible versions while preserving the original structure, formatting, indentations, and non-dependency fields of the file.
+
+If the tool `modify_file` is available, call `modify_file(file_path, new_content)` with the updated content to automatically persist the file changes.
+Return ONLY the raw updated manifest file content. Do not wrap it in markdown code block syntax (like ```) and do not include any introductory or concluding text or commentary.
+"""
+
+    def prompt_update_manifest(self, manifest_file: File, update_context: ManifestFileUpdateContext, **kwargs) -> str:
+        import json
+        if hasattr(update_context, "model_dump_json"):
+            context_json = update_context.model_dump_json(indent=2)
+        else:
+            context_json = json.dumps(update_context, indent=2)
+
+        return f"""
+Here is the original manifest file path: `{manifest_file.path}`
+Here is the original manifest file content:
+```
+{manifest_file.content}
+```
+
+Here is the update plan context (UpdatePlan) specifying the target dependency versions and security information:
+```json
+{context_json}
+```
+
+Please produce the complete updated manifest file content with the target dependency versions applied.
+"""
+
+    def system_instructions_get_update_plan(self, **kwargs) -> str:
+        return """
+You are a senior software engineer and cybersecurity expert.
+Your task is to analyze a ManifestFileUpdateContext containing dependency update contexts.
+Each dependency has 3 versions with their security vulnerability reports:
+1. current_version_dependency_report (the version currently in use)
+2. latest_compatible_version_dependency_report (the latest semver-compatible version)
+3. latest_version_dependency_report (the newest version available)
+
+For each dependency, you must DECIDE which version to recommend:
+- PREFER latest_compatible_version if it resolves known vulnerabilities without breaking backward compatibility.
+- Upgrade to latest_version ONLY if latest_compatible_version still has critical vulnerabilities and latest_version is secure.
+- KEEP current_version if no vulnerabilities exist or if upgrading introduces more risk.
+- DO NOT blindly upgrade to latest_version. Major version changes may introduce breaking changes.
+
+For each dependency, provide a clear reasoning explaining WHY you chose that version over the others.
+
+If NO dependency needs an update, return empty lists.
+
+Return only valid JSON matching the provided schema.
+"""
+
+    def prompt_get_update_plan(self, update_context: ManifestFileUpdateContext, **kwargs) -> str:
+        import json
+        if hasattr(update_context, "model_dump_json"):
+            context_json = update_context.model_dump_json(indent=2)
+        else:
+            context_json = json.dumps(update_context, indent=2)
+
+        return f"""
+Analyze the following ManifestFileUpdateContext and decide which version to recommend for each dependency:
+
+```json
+{context_json}
+```
+
+For each dependency, return the name, current_version, recommended_version, and reasoning.
+If a dependency does not need any update, do not include it in the result.
+"""
+
+    def get_update_plan_response_format(self, **kwargs) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "manifest_file_path": { "type": "string" },
+                "dependency_updates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name":                { "type": "string" },
+                            "current_version":     { "type": ["string", "null"] },
+                            "recommended_version": { "type": ["string", "null"] },
+                            "reasoning":           { "type": "string" },
+                        },
+                        "required": ["name", "current_version", "recommended_version", "reasoning"],
+                        "additionalProperties": False,
+                    },
+                },
+                "dev_dependency_updates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name":                { "type": "string" },
+                            "current_version":     { "type": ["string", "null"] },
+                            "recommended_version": { "type": ["string", "null"] },
+                            "reasoning":           { "type": "string" },
+                        },
+                        "required": ["name", "current_version", "recommended_version", "reasoning"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["dependency_updates", "dev_dependency_updates", "manifest_file_path"],
+        }
+
+

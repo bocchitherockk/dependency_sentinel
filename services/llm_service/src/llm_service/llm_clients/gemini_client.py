@@ -16,7 +16,8 @@ from llm_service.llm_clients.llm_client import LLMClient
 class GeminiClient(LLMClient):
     def __init__(self, model_name: str):
         self.model_name = model_name
-        self.client: Client = Client(api_key=os.getenv('GEMINI_API_KEY'))
+        api_key = os.getenv('GEMINI_API_KEY') or 'dummy_key_for_tests'
+        self.client: Client = Client(api_key=api_key)
 
     @override
     async def chat(

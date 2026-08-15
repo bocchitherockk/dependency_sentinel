@@ -12,11 +12,10 @@ class DummyLLMClient(LLMClient):
         self.chat_result = chat_result
         self.chat_calls = []
 
-    async def chat(self, system_instructions, prompt, response_format=None, **kwargs):
+    async def chat(self, messages, response_format=None, **kwargs):
         self.chat_calls.append(
             {
-                "system_instructions": system_instructions,
-                "prompt": prompt,
+                "messages": messages,
                 "response_format": response_format,
                 "kwargs": kwargs,
             }
@@ -35,7 +34,7 @@ def test_detect_manifests_returns_matching_files():
 
     assert result == [files[1]]
     assert len(client.chat_calls) == 1
-    assert "package.json" in client.chat_calls[0]["prompt"]
+    assert "package.json" in client.chat_calls[0]["messages"][1]["content"]
     assert client.chat_calls[0]["response_format"] == client.detect_manifests_response_format()
 
 
@@ -73,8 +72,30 @@ def test_extract_dependencies_builds_manifest_file():
         dev_dependencies=[],
     )
     assert len(client.chat_calls) == 1
-    assert "package.json" in client.chat_calls[0]["prompt"]
+    assert "package.json" in client.chat_calls[0]["messages"][1]["content"]
     assert client.chat_calls[0]["response_format"] == client.extract_dependencies_response_format()
+
+
+def test_update_manifest_returns_updated_file():
+    from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
+    updated_content = '{"name": "demo", "dependencies": {"axios": "^1.14.0"}}'
+    client = DummyLLMClient(updated_content)
+    manifest_file = File(
+        path="/repo/package.json",
+        name="package.json",
+        content='{"name": "demo", "dependencies": {"axios": "^1.0.0"}}'
+    )
+    update_context = ManifestFileUpdateContext(
+        dependencies_update_context=[],
+        dev_dependencies_update_context=[]
+    )
+
+    result = asyncio.run(client.update_manifest(manifest_file, update_context))
+
+    assert result.content == updated_content
+    assert result.path == manifest_file.path
+    assert len(client.chat_calls) == 1
+    assert "package.json" in client.chat_calls[0]["messages"][1]["content"]
 
 
 def test_prompt_manifest_files_detection_lists_paths():
@@ -97,4 +118,4 @@ def test_prompt_extract_dependencies_includes_content():
     prompt = client.prompt_extract_dependencies(manifest_file)
 
     assert "/repo/package.json" in prompt
-    assert '{"name": "demo"}' in prompt
+    assert '{"name": "demo"}' in prompt
