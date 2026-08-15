@@ -83,7 +83,12 @@ class LLMClient(ABC):
         )
         return ManifestFileUpdatePlan(**chat_result)
 
-    async def update_manifest(self, manifest_file: File, update_plan: ManifestFileUpdatePlan) -> File:
+    async def update_manifest(
+        self,
+        manifest_file: File,
+        update_plan: ManifestFileUpdatePlan,
+        mcp_client: fastmcp.Client | None = None,
+    ) -> File:
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
@@ -94,14 +99,34 @@ class LLMClient(ABC):
                 'content': self.prompt_update_manifest(manifest_file, update_plan)
             }
         ]
-        chat_result: str = await self.chat(
-            messages=messages,
-        )
+        
+        if mcp_client is None:
+            try:
+                from common.config import services
+                mcp_endpoint = f"{services['mcp-server']['endpoint']}/mcp"
+                async with fastmcp.Client(mcp_endpoint) as client:
+                    chat_result = await self.chat(
+                        messages=messages,
+                        mcp_client=client,
+                    )
+            except Exception as e:
+                print(f"Notice: MCP Client connection failed or unneeded: {e}. Falling back to standard chat.")
+                chat_result = await self.chat(
+                    messages=messages,
+                    mcp_client=None,
+                )
+        else:
+            chat_result = await self.chat(
+                messages=messages,
+                mcp_client=mcp_client,
+            )
+
         return File(
             path=manifest_file.path,
             name=manifest_file.name,
-            content=chat_result
+            content=chat_result if isinstance(chat_result, str) else str(chat_result)
         )
+
 
     async def analyze_security_delta(self, update_context: ManifestFileUpdateContext | dict[str, Any]) -> dict[str, Any]:
         if hasattr(update_context, "model_dump"):
@@ -339,6 +364,7 @@ You are an expert software engineer and DevSecOps specialist.
 Your task is to update a project's dependency manifest file (such as package.json, pom.xml, pyproject.toml, build.gradle, etc.) based on a provided update context (UpdatePlan).
 You must update the specified dependencies to their recommended secure and compatible versions while preserving the original structure, formatting, indentations, and non-dependency fields of the file.
 
+If the tool `modify_file` is available, call `modify_file(file_path, new_content)` with the updated content to automatically persist the file changes.
 Return ONLY the raw updated manifest file content. Do not wrap it in markdown code block syntax (like ```) and do not include any introductory or concluding text or commentary.
 """
 

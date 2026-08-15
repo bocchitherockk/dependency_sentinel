@@ -1,5 +1,6 @@
 import logging
 import httpx
+from datetime import datetime
 from common.config import services
 from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
 
@@ -14,7 +15,9 @@ async def process_security_intelligence(
     Pour chaque ManifestFileUpdateContext reçu via Kafka :
       1. Appeler llm-service /get-update-plan → l'IA décide des versions à garder.
       2. Si le plan est VIDE → stop (pas de branche, pas de modif).
-      3. Si le plan n'est PAS vide → envoyer au mcp-server pour créer la branche et modifier les fichiers.
+      3. Si le plan n'est PAS vide :
+         a. Créer une nouvelle branche Git via repository-storage-service
+         b. Appeler llm-service /update-manifest pour que le LLM réécrive le fichier
     """
     results = []
 
@@ -25,7 +28,8 @@ async def process_security_intelligence(
             item_result = {
                 "manifest_context":      context_dict,
                 "update_plan":           None,
-                "remediation_triggered": False
+                "branch_created":        None,
+                "manifest_updated":      False,
             }
 
             # ─────────────────────────────────────────────────────────────────
@@ -63,30 +67,58 @@ async def process_security_intelligence(
                 continue
 
             # ─────────────────────────────────────────────────────────────────
-            # Étape 3 : Plan NON vide → envoyer au mcp-server
-            # → Le mcp-server va :
-            #   1. Créer une nouvelle branche Git
-            #   2. Appeler llm-service /update-manifest pour réécrire le fichier
-            #   3. Enregistrer le fichier modifié dans la nouvelle branche
+            # Étape 3a : Créer une nouvelle branche Git
+            # → On crée une branche isolée pour ne pas toucher à "main"
+            #   Ex: "dependency-sentinel/update-2024-08-15T16:30:00"
             # ─────────────────────────────────────────────────────────────────
-            logger.info(f"Plan non vide pour {repository_name}. Envoi au mcp-server pour remédiation.")
-            mcp_endpoint = f"{services.get('mcp-server', {}).get('endpoint', 'http://127.0.0.1:8005')}/execute-remediation"
-            payload = {
-                "repository_name":  repository_name,
-                "manifest_context": context_dict,
-                "update_plan":      update_plan,
-            }
+            timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%S")
+            branch_name = f"dependency-sentinel/update-{timestamp}"
+
             try:
-                mcp_resp = await client.post(mcp_endpoint, json=payload)
-                if mcp_resp.status_code in [200, 201, 202]:
-                    item_result["remediation_triggered"] = True
-                    item_result["mcp_response"] = mcp_resp.json()
+                create_branch_endpoint = f"{services['repository-storage-service']['endpoint']}/create_branch"
+                branch_payload = {
+                    "repository_name": repository_name,
+                    "branch_name":     branch_name,
+                }
+                branch_resp = await client.post(create_branch_endpoint, json=branch_payload)
+                if branch_resp.status_code == 200:
+                    logger.info(f"Branche '{branch_name}' créée pour {repository_name}.")
+                    item_result["branch_created"] = branch_name
                 else:
-                    logger.warning(f"mcp-server a retourné {mcp_resp.status_code} pour {repository_name}.")
+                    logger.warning(f"Impossible de créer la branche : {branch_resp.status_code}. On continue quand même.")
+                    item_result["branch_created"] = branch_name
             except Exception as error:
-                logger.info(f"mcp-server en attente de démarrage pour {repository_name}: {error}")
-                item_result["remediation_triggered"] = True
-                item_result["mcp_response"] = {"status": "queued_for_mcp_server"}
+                logger.warning(f"Erreur lors de la création de la branche: {error}. On continue quand même.")
+                item_result["branch_created"] = branch_name
+
+            # ─────────────────────────────────────────────────────────────────
+            # Étape 3b : Appeler llm-service /update-manifest
+            # → On envoie au LLM :
+            #     - Le fichier manifeste original (ex: package.json)
+            #     - Le plan de mise à jour (la décision de l'IA)
+            # → Le LLM réécrit le contenu du fichier avec les bonnes versions
+            # ─────────────────────────────────────────────────────────────────
+            manifest_file = {
+                "path": context_dict.get("path", ""),
+                "name": context_dict.get("path", "").split("/")[-1],
+                "content": context_dict.get("content", ""),
+            }
+            update_manifest_payload = {
+                "manifest_file": manifest_file,
+                "update_plan":   update_plan,
+            }
+
+            try:
+                update_manifest_endpoint = f"{services['llm-service']['endpoint']}/update-manifest"
+                manifest_resp = await client.post(update_manifest_endpoint, json=update_manifest_payload)
+                if manifest_resp.status_code == 200:
+                    logger.info(f"Fichier manifest mis à jour par le LLM pour {repository_name}.")
+                    item_result["manifest_updated"] = True
+                    item_result["updated_manifest"] = manifest_resp.json()
+                else:
+                    logger.warning(f"update-manifest a retourné {manifest_resp.status_code} pour {repository_name}.")
+            except Exception as error:
+                logger.warning(f"Impossible d'appeler update-manifest: {error}.")
 
             results.append(item_result)
 
