@@ -36,7 +36,7 @@ class SecurityRegistry:
         payload = {
             'package': {
                 'name': dependency.name,
-                'ecosystem': SecurityRegistry.correct_ecosystem_name(dependency.registry.name)
+                'ecosystem': SecurityRegistry.correct_ecosystem_name(dependency.registry_name)
             },
             'version': dependency.version
         }

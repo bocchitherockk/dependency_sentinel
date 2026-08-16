@@ -19,7 +19,7 @@ async def get_dependency_security_report(dependency: Dependency) -> DependencySe
     return DependencySecurityReport(
         name=dependency.name,
         version=dependency.version,
-        registry=dependency.registry,
+        registry_name=dependency.registry_name,
         vulnerabilities=vulnerabilities,
     )
 
