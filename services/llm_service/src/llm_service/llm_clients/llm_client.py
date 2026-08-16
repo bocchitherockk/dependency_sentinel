@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import fastmcp
+from pydantic import TypeAdapter
 
 from common.config import services
 from common.schemas.File import File
@@ -34,7 +35,7 @@ class LLMClient(ABC):
         ]
         chat_result: list[str] = await self.chat(
             messages=messages,
-            response_format=self.detect_manifests_response_format(),
+            response_format=TypeAdapter(set[str]).json_schema(),
         )
         result: list[File] = []
         for file_path in chat_result:
@@ -63,7 +64,7 @@ class LLMClient(ABC):
         ]
         chat_result: dict[str, Any] = await self.chat(
             messages=messages,
-            response_format=self.extract_dependencies_response_format(),
+            response_format=ManifestFile.model_json_schema(),
         )
         return ManifestFile(**chat_result)
 
@@ -80,7 +81,7 @@ class LLMClient(ABC):
         ]
         chat_result: dict[str, Any] = await self.chat(
             messages=messages,
-            response_format=self.get_update_plan_response_format(),
+            response_format=ManifestFileUpdatePlan.model_json_schema(),
         )
         return ManifestFileUpdatePlan(**chat_result)
 
@@ -111,38 +112,6 @@ class LLMClient(ABC):
             name=manifest_file.name,
             content=chat_result
         )
-
-    def system_instructions_analyze_security_delta(self, **kwargs) -> str:
-        return """
-You are a senior cybersecurity engineer and software architect.
-Your task is to analyze dependency update contexts and vulnerability deltas (comparing current version vs candidate version).
-You must evaluate the security impact, determine a recommendation ('FAVORABLE', 'CAUTIOUS', or 'DISCOURAGED'), calculate a risk score (1-10), and write a clear, detailed rationale in Markdown explaining why the developer should or should not upgrade.
-"""
-
-    def prompt_analyze_security_delta(self, context_data: dict[str, Any], **kwargs) -> str:
-        import json
-        return f"""
-Analyze the following dependency update context and vulnerability reports:
-
-{json.dumps(context_data, indent=2)}
-
-Determine:
-1. recommendation: "FAVORABLE" if upgrading resolves CVEs without breaking changes, "CAUTIOUS" if breaking risk exists, "DISCOURAGED" if candidate introduces new vulnerabilities.
-2. risk_score: Integer from 1 to 10 (1 = lowest risk, 10 = critical risk).
-3. rationale: Markdown formatted explanation describing the vulnerability delta, resolved CVEs, and recommended action for the developer.
-"""
-
-    def analyze_security_delta_response_format(self, **kwargs) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "recommendation": { "type": "string", "enum": ["FAVORABLE", "CAUTIOUS", "DISCOURAGED"] },
-                "risk_score": { "type": "integer" },
-                "rationale": { "type": "string" }
-            },
-            "required": ["recommendation", "risk_score", "rationale"],
-            "additionalProperties": False
-        }
 
     # These methods are here in case a specific LLM client wants to provide its own prompts and response formats, otherwise these are the default ones that will be used.
     # They accept **kwargs so that they can be customized by specific LLM clients if needed.
@@ -242,85 +211,6 @@ and here is its content:
 ```
 """
 
-    def detect_manifests_response_format(self, **kwargs) -> dict[str, Any]:
-        return {
-            "type": "array",
-            "items": {
-                "type": "string",
-            },
-            "uniqueItems": True,
-        }
-
-    def extract_dependencies_response_format(self, **kwargs) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": { "type": "string" },
-                "dependencies": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name":    { "type": "string" },
-                            "version": { "type": ["string", "null"] },
-                            "registry": {
-                                "type": "object",
-                                "properties": {
-                                    "name": { "type": "string" },
-                                    "url":  { "type": "string" },
-                                },
-                                "required": [
-                                    "name",
-                                    "url",
-                                ],
-                                "additionalProperties": False,
-                            },
-                        },
-                        "required": [
-                            "name",
-                            "version",
-                            "registry",
-                        ],
-                        "additionalProperties": False,
-                    },
-                },
-                "dev_dependencies": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name":    { "type": "string" },
-                            "version": { "type": ["string", "null"] },
-                            "registry": {
-                                "type": "object",
-                                "properties": {
-                                    "name": { "type": "string" },
-                                    "url":  { "type": "string" },
-                                },
-                                "required": [
-                                    "name",
-                                    "url",
-                                ],
-                                "additionalProperties": False,
-                            },
-                        },
-                        "required": [
-                            "name",
-                            "version",
-                            "registry",
-                        ],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": [
-                "path",
-                "dependencies",
-                "dev_dependencies",
-            ],
-            "additionalProperties": False,
-        }
-
     def system_instructions_update_manifest(self, **kwargs) -> str:
         return """
 You are an expert software engineer and DevSecOps specialist.
@@ -392,42 +282,3 @@ Analyze the following ManifestFileUpdateContext and decide which version to reco
 For each dependency, return the name, current_version, recommended_version, and reasoning.
 If a dependency does not need any update, do not include it in the result.
 """
-
-    def get_update_plan_response_format(self, **kwargs) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "manifest_file_path": { "type": "string" },
-                "dependency_updates": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name":                { "type": "string" },
-                            "current_version":     { "type": ["string", "null"] },
-                            "recommended_version": { "type": ["string", "null"] },
-                            "reasoning":           { "type": "string" },
-                        },
-                        "required": ["name", "current_version", "recommended_version", "reasoning"],
-                        "additionalProperties": False,
-                    },
-                },
-                "dev_dependency_updates": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name":                { "type": "string" },
-                            "current_version":     { "type": ["string", "null"] },
-                            "recommended_version": { "type": ["string", "null"] },
-                            "reasoning":           { "type": "string" },
-                        },
-                        "required": ["name", "current_version", "recommended_version", "reasoning"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["dependency_updates", "dev_dependency_updates", "manifest_file_path"],
-        }
-
-

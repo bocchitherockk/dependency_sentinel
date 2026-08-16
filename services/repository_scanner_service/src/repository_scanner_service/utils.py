@@ -84,7 +84,8 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
         tasks = [
             client.post(
                 f'{services['llm-service']['endpoint']}/extract-dependencies',
-                params= {'model_name': 'qwen2.5-coder:1.5b'},
+                # params= {'model_name': 'qwen2.5-coder:1.5b'},
+                params= {'model_name': 'qwen3:8b'},
                 json=manifest_file.model_dump(mode='json'),
             )
             for manifest_file in detected_manifest_files
