@@ -10,7 +10,7 @@ from registry_service.registry_selector import RegistrySelector
 from registry_service.security_registry import SecurityRegistry
 
 async def get_candidate_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency]:
-    registry_adapter: BaseRegistryAdapter = RegistrySelector.get_adapter(dependency.registry.name)
+    registry_adapter: BaseRegistryAdapter = RegistrySelector.get_adapter(dependency.registry_name)
     candidate_versions_dependencies: tuple[Dependency, Dependency] = await registry_adapter.get_candidate_versions_dependencies(dependency)
     return candidate_versions_dependencies
 
