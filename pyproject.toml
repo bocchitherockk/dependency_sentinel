@@ -21,6 +21,7 @@ members = [
 ]
 
 [tool.uv.sources]
+dependency-sentinel-cli = { workspace = true }
 scheduler = { workspace = true }
 gateway = { workspace = true }
 repository-storage-service = { workspace = true }

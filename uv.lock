@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "common",
     "dependency-sentinel",
+    "dependency-sentinel-cli",
     "events",
     "gateway",
     "llm-service",
@@ -510,6 +511,21 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]
+
+[[package]]
+name = "dependency-sentinel-cli"
+version = "0.1.0"
+source = { editable = "services/dependency_sentinel_cli" }
+dependencies = [
+    { name = "common" },
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "common", editable = "libs/common" },
+    { name = "httpx", specifier = ">=0.27.0" },
+]
 
 [[package]]
 name = "distro"
