@@ -90,7 +90,7 @@ class LLMClient(ABC):
         self,
         manifest_file: File,
         update_plan: ManifestFileUpdatePlan,
-    ) -> File:
+    ) -> str:
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
@@ -107,13 +107,8 @@ class LLMClient(ABC):
                 messages=messages,
                 mcp_client=mcp_client,
             )
-
-        # TODO 1: This does not return the updated files, because the LLM updates them via mcp-server, and not return their content via response
-        return File(
-            path=manifest_file.path,
-            name=manifest_file.name,
-            content=chat_result
-        )
+            
+        return chat_result
 
     # These methods are here in case a specific LLM client wants to provide its own prompts and response formats, otherwise these are the default ones that will be used.
     # They accept **kwargs so that they can be customized by specific LLM clients if needed.

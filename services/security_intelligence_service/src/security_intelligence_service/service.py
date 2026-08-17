@@ -61,7 +61,7 @@ async def create_git_branch(repository_name: str, branch_name: str) -> None:
         )
         response.raise_for_status()
 
-async def get_manifest_files_to_update(manifest_files_update_plans: list[ManifestFileUpdatePlan]) -> list[File]:
+async def get_manifest_files(manifest_files_update_plans: list[ManifestFileUpdatePlan]) -> list[File]:
     async with httpx.AsyncClient() as client:
         responses = await asyncio.gather(*[
             client.get(
@@ -71,14 +71,14 @@ async def get_manifest_files_to_update(manifest_files_update_plans: list[Manifes
             for manifest_file_update_plan in manifest_files_update_plans
         ])
 
-    manifest_files_to_update: list[File] = []
+    manifest_files: list[File] = []
     for response in responses:
         response.raise_for_status()
-        manifest_files_to_update.append(File(**response.json()))
+        manifest_files.append(File(**response.json()))
 
-    return manifest_files_to_update
+    return manifest_files
 
-async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpdatePlan) -> File:
+async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpdatePlan) -> str:
     update_manifest_request: UpdateManifestRequest = UpdateManifestRequest(
         manifest_file=manifest_file,
         update_plan=update_plan,
@@ -90,8 +90,7 @@ async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpd
             json=update_manifest_request.model_dump(mode='json'),
         )
     response.raise_for_status()
-    # TODO 2: This does not return the updated files, because the LLM updates them via mcp-server, and not return their content via response
-    return File(**response.json())
+    return response.json()
 
 async def process_security_intelligence(
     repository_name: str,
@@ -148,7 +147,7 @@ async def process_security_intelligence(
     await create_git_branch(repository_name, branch_name)
 
     # Step 4: gather the files to update and call the LLM service to update them
-    manifest_files_to_update: list[File] = await get_manifest_files_to_update(manifest_files_update_plans)
+    manifest_files_to_update: list[File] = await get_manifest_files(manifest_files_update_plans)
 
     # ─────────────────────────────────────────────────────────────────
     # Étape 5 : Appeler llm-service /update-manifest
@@ -157,11 +156,13 @@ async def process_security_intelligence(
     #     - Le plan de mise à jour (la décision de l'IA)
     # → Le LLM réécrit le contenu du fichier avec les bonnes versions
     # ─────────────────────────────────────────────────────────────────
-    # TODO 3: This does not return the updated files, because the LLM updates them via mcp-server, and not return their content via response
-    updated_manifest_files: list[File] = await asyncio.gather(*[
+    await asyncio.gather(*[
         update_manifest_file(manifest_file, manifest_file_update_plan)
         for manifest_file, manifest_file_update_plan in zip(manifest_files_to_update, manifest_files_update_plans)
     ])
+
+    # Step 6: Fetch the updated manifest files again
+    updated_manifest_files: list[File] = get_manifest_files(manifest_files_update_plans)
 
     return updated_manifest_files
 
