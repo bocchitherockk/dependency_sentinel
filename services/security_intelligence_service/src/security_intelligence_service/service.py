@@ -115,26 +115,23 @@ async def process_security_intelligence(
         for manifest_file_update_context in manifest_files_update_context
     ])
 
-    # clean up the update plans to remove any dependencies that don't actually need updates
+    # Clean up the update plans to remove any dependencies that don't actually need updates
     for manifest_file_update_plan in manifest_files_update_plans:
-        dependencies_updates: list[DependencyUpdatePlan] = []
-        dev_dependencies_updates: list[DependencyUpdatePlan] = []
-        for dependency_update in manifest_file_update_plan.dependencies_updates:
-            if dependency_update.current_version != dependency_update.recommended_version:
-                dependencies_updates.append(dependency_update)
-        for dev_dependency_update in manifest_file_update_plan.dev_dependencies_updates:
-            if dev_dependency_update.current_version != dev_dependency_update.recommended_version:
-                dev_dependencies_updates.append(dev_dependency_update)
+        manifest_file_update_plan.remove_unnecessary_update_elements()
 
-        manifest_file_update_plan.dependencies_updates = dependencies_updates
-        manifest_file_update_plan.dev_dependencies_updates = dev_dependencies_updates
+    # Remove any manifest files that have no updates after cleaning
+    manifest_files_update_plans = [
+        manifest_file_update_plan
+        for manifest_file_update_plan in manifest_files_update_plans
+        if manifest_file_update_plan.has_updates()
+    ]
 
     # ─────────────────────────────────────────────────────────────────
     # Étape 2 : Vérifier si le plan est VIDE
     # → Si vide : aucune mise à jour nécessaire, on s'arrête ici.
     #   Pas de création de branche, pas de modification de fichiers.
     # ─────────────────────────────────────────────────────────────────
-    if not any(manifest_file_update_plan.has_updates() for manifest_file_update_plan in manifest_files_update_plans):
+    if not manifest_files_update_plans:
         return []
 
     # ─────────────────────────────────────────────────────────────────
