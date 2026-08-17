@@ -1,0 +1,26 @@
+[project]
+name = "scheduler"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Yassine", email = "yassinemakhlouf5@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "common",
+    "events",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "httpx>=0.27.0",
+]
+
+[tool.uv.sources]
+common = { workspace = true }
+events = { workspace = true }
+
+[project.scripts]
+scheduler = "scheduler.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scheduler"]
