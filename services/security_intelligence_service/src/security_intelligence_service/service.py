@@ -90,12 +90,12 @@ async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpd
             json=update_manifest_request.model_dump(mode='json'),
         )
     response.raise_for_status()
-    return response.json()
+    return response.text
 
-async def process_security_intelligence(
+async def analyze_update_context_and_update_manifests(
     repository_name: str,
     manifest_files_update_context: list[ManifestFileUpdateContext]
-) -> list[File]:
+) -> str:
     """
     Orchestre l'analyse d'intelligence de sécurité :
     Pour chaque ManifestFileUpdateContext reçu via Kafka :
@@ -132,7 +132,7 @@ async def process_security_intelligence(
     #   Pas de création de branche, pas de modification de fichiers.
     # ─────────────────────────────────────────────────────────────────
     if not manifest_files_update_plans:
-        return []
+        return ''
 
     # ─────────────────────────────────────────────────────────────────
     # Étape 3 : Créer une nouvelle branche Git
@@ -153,12 +153,15 @@ async def process_security_intelligence(
     #     - Le plan de mise à jour (la décision de l'IA)
     # → Le LLM réécrit le contenu du fichier avec les bonnes versions
     # ─────────────────────────────────────────────────────────────────
-    await asyncio.gather(*[
+    summaries: list[str] = await asyncio.gather(*[
         update_manifest_file(manifest_file, manifest_file_update_plan)
         for manifest_file, manifest_file_update_plan in zip(manifest_files_to_update, manifest_files_update_plans)
     ])
+    
+    summary: str = ''
+    for manifest_file_update_plan, reasoning in zip(manifest_files_update_plans, summaries):
+        summary += f"###### file: {manifest_file_update_plan.manifest_file_path} ######\n"
+        summary += f"Reasoning:\n{reasoning}\n"
+        summary += "───────────────────────────────────────────\n"
 
-    # Step 6: Fetch the updated manifest files again
-    updated_manifest_files: list[File] = await get_manifest_files(manifest_files_update_plans)
-
-    return updated_manifest_files
+    return summary
