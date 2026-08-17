@@ -155,16 +155,16 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
     #     ManifestFile(
     #         path='Plateforme-e-commerce-SaaS-avec-abonnements/notifications-service/pom.xml',
     #         dependencies=[
-    #             Dependency(name='jackson-databind', version='2.15.2', registry_name='maven-central'),
+    #             Dependency(name='com.fasterxml.jackson.core:jackson-databind', version='2.15.2', registry_name='maven'),
     #         ],
     #         dev_dependencies=[]
     #     ),
     #     ManifestFile(
     #         path='Plateforme-e-commerce-SaaS-avec-abonnements/orders-service/pom.xml',
     #         dependencies=[
-    #             Dependency(name='springdoc-openapi-starter-webmvc-ui', version='2.0.0'  , registry_name='maven-central'),
-    #             Dependency(name='okta-spring-boot-starter'           , version='3.0.4'  , registry_name='maven-central'),
-    #             Dependency(name='stripe-java'                        , version='22.28.0', registry_name='maven-central'),
+    #             Dependency(name='org.springdoc:springdoc-openapi-starter-webmvc-ui', version='2.0.0'  , registry_name='maven'),
+    #             Dependency(name='com.okta.spring:okta-spring-boot-starter'         , version='3.0.4'  , registry_name='maven'),
+    #             Dependency(name='com.stripe:stripe-java'                           , version='22.28.0', registry_name='maven'),
     #         ],
     #         dev_dependencies=[]
     #     )
