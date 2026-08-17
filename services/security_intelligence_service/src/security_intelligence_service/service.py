@@ -159,7 +159,7 @@ async def process_security_intelligence(
     ])
 
     # Step 6: Fetch the updated manifest files again
-    updated_manifest_files: list[File] = get_manifest_files(manifest_files_update_plans)
+    updated_manifest_files: list[File] = await get_manifest_files(manifest_files_update_plans)
 
     return updated_manifest_files
 
