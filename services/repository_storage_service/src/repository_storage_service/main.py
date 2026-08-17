@@ -47,7 +47,7 @@ manifest_files_edited_event_consumer: EventConsumer = EventConsumer(
 async def handle_topic_scan_started(key: str, value: dict, msg):
     scan_started_event: ScanStartedEvent = ScanStartedEvent(**value)
     repository_url: str = scan_started_event.repository_url
-    repository_name, repository_owner_name = get_repository_name_and_owner_name(repository_url)
+    repository_owner_name, repository_name = get_repository_name_and_owner_name(repository_url)
     destination: Path = Path('./repositories') / repository_name
 
     default_branch: str = clone_repository(repository_url, destination)
