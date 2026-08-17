@@ -1,12 +1,15 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+import httpx
 import fastmcp
+from pydantic import TypeAdapter
 
 from common.config import services
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
-from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
+from common.schemas.DependencyUpdateContext import DependencyUpdateContext
+from common.schemas.DependencyUpdatePlan import DependencyUpdatePlan
 from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
 
 class LLMClient(ABC):
@@ -34,7 +37,7 @@ class LLMClient(ABC):
         ]
         chat_result: list[str] = await self.chat(
             messages=messages,
-            response_format=self.detect_manifests_response_format(),
+            response_format=TypeAdapter(set[str]).json_schema(),
         )
         result: list[File] = []
         for file_path in chat_result:
@@ -45,16 +48,21 @@ class LLMClient(ABC):
                     found = True
                     break
             if not found:
-                # raise ValueError(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
-                print(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
+                raise ValueError(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
+                # print(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
 
         return result
 
     async def extract_dependencies(self, manifest_file: File) -> ManifestFile:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{services['registry-service']['endpoint']}/supported-registries")
+        response.raise_for_status()
+        supported_registries: list[str] = response.json()
+
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
-                'content': self.system_instructions_extract_dependencies()
+                'content': self.system_instructions_extract_dependencies(supported_registries=supported_registries)
             },
             {
                 'role': 'user',
@@ -63,11 +71,11 @@ class LLMClient(ABC):
         ]
         chat_result: dict[str, Any] = await self.chat(
             messages=messages,
-            response_format=self.extract_dependencies_response_format(),
+            response_format=ManifestFile.model_json_schema(),
         )
         return ManifestFile(**chat_result)
 
-    async def get_update_plan(self, update_context: ManifestFileUpdateContext) -> ManifestFileUpdatePlan:
+    async def get_update_plan(self, dependency_update_context: DependencyUpdateContext) -> DependencyUpdatePlan:
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
@@ -75,20 +83,20 @@ class LLMClient(ABC):
             },
             {
                 'role': 'user',
-                'content': self.prompt_get_update_plan(update_context)
+                'content': self.prompt_get_update_plan(dependency_update_context)
             }
         ]
         chat_result: dict[str, Any] = await self.chat(
             messages=messages,
-            response_format=self.get_update_plan_response_format(),
+            response_format=DependencyUpdatePlan.model_json_schema(),
         )
-        return ManifestFileUpdatePlan(**chat_result)
+        return DependencyUpdatePlan(**chat_result)
 
     async def update_manifest(
         self,
         manifest_file: File,
         update_plan: ManifestFileUpdatePlan,
-    ) -> File:
+    ) -> str:
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
@@ -105,329 +113,323 @@ class LLMClient(ABC):
                 messages=messages,
                 mcp_client=mcp_client,
             )
-
-        return File(
-            path=manifest_file.path,
-            name=manifest_file.name,
-            content=chat_result
-        )
-
-    def system_instructions_analyze_security_delta(self, **kwargs) -> str:
-        return """
-You are a senior cybersecurity engineer and software architect.
-Your task is to analyze dependency update contexts and vulnerability deltas (comparing current version vs candidate version).
-You must evaluate the security impact, determine a recommendation ('FAVORABLE', 'CAUTIOUS', or 'DISCOURAGED'), calculate a risk score (1-10), and write a clear, detailed rationale in Markdown explaining why the developer should or should not upgrade.
-"""
-
-    def prompt_analyze_security_delta(self, context_data: dict[str, Any], **kwargs) -> str:
-        import json
-        return f"""
-Analyze the following dependency update context and vulnerability reports:
-
-{json.dumps(context_data, indent=2)}
-
-Determine:
-1. recommendation: "FAVORABLE" if upgrading resolves CVEs without breaking changes, "CAUTIOUS" if breaking risk exists, "DISCOURAGED" if candidate introduces new vulnerabilities.
-2. risk_score: Integer from 1 to 10 (1 = lowest risk, 10 = critical risk).
-3. rationale: Markdown formatted explanation describing the vulnerability delta, resolved CVEs, and recommended action for the developer.
-"""
-
-    def analyze_security_delta_response_format(self, **kwargs) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "recommendation": { "type": "string", "enum": ["FAVORABLE", "CAUTIOUS", "DISCOURAGED"] },
-                "risk_score": { "type": "integer" },
-                "rationale": { "type": "string" }
-            },
-            "required": ["recommendation", "risk_score", "rationale"],
-            "additionalProperties": False
-        }
+            
+        return chat_result
 
     # These methods are here in case a specific LLM client wants to provide its own prompts and response formats, otherwise these are the default ones that will be used.
     # They accept **kwargs so that they can be customized by specific LLM clients if needed.
     def system_instructions_manifest_files_detection(self, **kwargs) -> str:
-        return """
-You are an expert software engineer.
-Your task is to identify dependency manifest files from a list of project file paths.
-A dependency manifest is a file whose purpose is to declare the dependencies used in a project.
-
-Examples include:
-- package.json
-- pom.xml
-- build.gradle
-- build.gradle.kts
-- requirements.txt
-- Pipfile
-- pyproject.toml
-- Cargo.toml
-- composer.json
-- Gemfile
-- go.mod
-- go.sum
-
-Return only dependency manifest files.
-
-Ignore every other file, including source files, dependency lock files, Dockerfiles, README files, CI configuration, shell scripts, and unrelated configuration files.
-Lock files are not dependency manifests, even though they contain dependency information. Examples of lock files include:
-- package-lock.json
-- pnpm-lock.yaml
-- yarn.lock
-- Pipfile.lock
-- poetry.lock
-- Cargo.lock
-- composer.lock
-- Gemfile.lock
-
-Only return valid JSON matching the provided schema.
-"""
-
-    def prompt_manifest_files_detection(self, files: list[File], **kwargs) -> str:
-        return f"""
-Here is the list of files in the project:
-```
-{"\n".join([str(file.path) for file in files])}
-```
-"""
-
-    def system_instructions_extract_dependencies(self, **kwargs) -> str:
-        # TODO: here change the ist of supporeted registries to be dynamic
-        return """
+        return '''
 You are an expert software engineer.
 
-Your task is to extract each dependency and its version from a dependency manifest file.
-Extract also the dev dependencies if they are present.
-Return only the extracted dependencies in JSON format.
-Do not change the path of the files.
-Put the dependency version as they are.
+Given a list of project file paths, identify every dependency manifest file.
 
-Example:
-{
-    "path": "full/path/to/file/dont/change/it",
-    "dependencies": [
-        {
-            "name": "axios",
-            "version": "^1.14.0",
-            "registry": {
-                "name": "npm",
-                "url": "https://registry.npmjs.org/"
-            }
-        }
-    ],
-    "dev_dependencies": [
-        {
-            "name": "jest",
-            "version": "^29.0.0",
-            "registry": {
-                "name": "maven",
-                "url": "https://repo.maven.apache.org/maven2/"
-            }
-        }
-    ]
-}
+A dependency manifest is a file that is conventionally used by its ecosystem to declare, configure, or manage a project's direct package dependencies.
 
-here are the supporeted registries:
-- npm: https://registry.npmjs.org/
-- maven: https://repo.maven.apache.org/maven2/
+Classify files using only their file path and file name. Do not infer file contents.
 
-If the dependency registry is not in the list above, return None for the registry name and url.
-"""
+Common examples of manifest files are listed below, but the list is not exhaustive.
+If you recognize another conventional dependency manifest from any programming language, package manager, or build system, include it in the result.
 
-    def prompt_extract_dependencies(self, manifest_file: File, **kwargs) -> str:
-        return f"""
-Here is the file path: `{str(manifest_file.path)}`,
-and here is its content:
-```
-{manifest_file.content}
-```
-"""
+package.json
+pom.xml
+build.gradle
+build.gradle.kts
+requirements.txt
+Pipfile
+pyproject.toml
+Cargo.toml
+composer.json
+Gemfile
+go.mod
+*.csproj
+Directory.Packages.props
+Package.swift
+Podfile
+mix.exs
+pubspec.yaml
 
-    def detect_manifests_response_format(self, **kwargs) -> dict[str, Any]:
-        return {
-            "type": "array",
-            "items": {
-                "type": "string",
-            },
-            "uniqueItems": True,
-        }
+Return every dependency manifest you detect. A project may contain multiple manifest files.
 
-    def extract_dependencies_response_format(self, **kwargs) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": { "type": "string" },
-                "dependencies": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name":    { "type": "string" },
-                            "version": { "type": ["string", "null"] },
-                            "registry": {
-                                "type": "object",
-                                "properties": {
-                                    "name": { "type": "string" },
-                                    "url":  { "type": "string" },
-                                },
-                                "required": [
-                                    "name",
-                                    "url",
-                                ],
-                                "additionalProperties": False,
-                            },
-                        },
-                        "required": [
-                            "name",
-                            "version",
-                            "registry",
-                        ],
-                        "additionalProperties": False,
-                    },
-                },
-                "dev_dependencies": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name":    { "type": "string" },
-                            "version": { "type": ["string", "null"] },
-                            "registry": {
-                                "type": "object",
-                                "properties": {
-                                    "name": { "type": "string" },
-                                    "url":  { "type": "string" },
-                                },
-                                "required": [
-                                    "name",
-                                    "url",
-                                ],
-                                "additionalProperties": False,
-                            },
-                        },
-                        "required": [
-                            "name",
-                            "version",
-                            "registry",
-                        ],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": [
-                "path",
-                "dependencies",
-                "dev_dependencies",
-            ],
-            "additionalProperties": False,
-        }
+Never return dependency lock files. Lock files record resolved dependencies but are not dependency manifests.
 
-    def system_instructions_update_manifest(self, **kwargs) -> str:
-        return """
-You are an expert software engineer and DevSecOps specialist.
-Your task is to update a project's dependency manifest file (such as package.json, pom.xml, pyproject.toml, build.gradle, etc.) based on a provided update context (UpdatePlan).
-You must update the specified dependencies to their recommended secure and compatible versions while preserving the original structure, formatting, indentations, and non-dependency fields of the file.
+Examples of lock files:
 
-If the tool `modify_file` is available, call `modify_file(file_path, new_content)` with the updated content to automatically persist the file changes.
-Return ONLY the raw updated manifest file content. Do not wrap it in markdown code block syntax (like ```) and do not include any introductory or concluding text or commentary.
-"""
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+Pipfile.lock
+poetry.lock
+Cargo.lock
+composer.lock
+Gemfile.lock
 
-    def prompt_update_manifest(self, manifest_file: File, update_context: ManifestFileUpdateContext, **kwargs) -> str:
-        import json
-        if hasattr(update_context, "model_dump_json"):
-            context_json = update_context.model_dump_json(indent=2)
-        else:
-            context_json = json.dumps(update_context, indent=2)
-
-        return f"""
-Here is the original manifest file path: `{manifest_file.path}`
-Here is the original manifest file content:
-```
-{manifest_file.content}
-```
-
-Here is the update plan context (UpdatePlan) specifying the target dependency versions and security information:
-```json
-{context_json}
-```
-
-Please produce the complete updated manifest file content with the target dependency versions applied.
-"""
-
-    def system_instructions_get_update_plan(self, **kwargs) -> str:
-        return """
-You are a senior software engineer and cybersecurity expert.
-Your task is to analyze a ManifestFileUpdateContext containing dependency update contexts.
-Each dependency has 3 versions with their security vulnerability reports:
-1. current_version_dependency_report (the version currently in use)
-2. latest_compatible_version_dependency_report (the latest semver-compatible version)
-3. latest_version_dependency_report (the newest version available)
-
-For each dependency, you must DECIDE which version to recommend:
-- PREFER latest_compatible_version if it resolves known vulnerabilities without breaking backward compatibility.
-- Upgrade to latest_version ONLY if latest_compatible_version still has critical vulnerabilities and latest_version is secure.
-- KEEP current_version if no vulnerabilities exist or if upgrading introduces more risk.
-- DO NOT blindly upgrade to latest_version. Major version changes may introduce breaking changes.
-
-For each dependency, provide a clear reasoning explaining WHY you chose that version over the others.
-
-If NO dependency needs an update, return empty lists.
+Ignore all other files, including source files, Dockerfiles, README files, CI/CD configuration, shell scripts, IDE files, and unrelated configuration files.
 
 Return only valid JSON matching the provided schema.
-"""
+'''
 
-    def prompt_get_update_plan(self, update_context: ManifestFileUpdateContext, **kwargs) -> str:
-        import json
-        if hasattr(update_context, "model_dump_json"):
-            context_json = update_context.model_dump_json(indent=2)
-        else:
-            context_json = json.dumps(update_context, indent=2)
+    def prompt_manifest_files_detection(self, files: list[File], **kwargs) -> str:
+        file_list: str = '\n'.join(str(file.path) for file in files)
+        return f'''
+The following is the complete list of project file paths.
+Each line is a relative file path.
+Classify files using only these paths. Do not infer file contents.
+```text
+{file_list}
+```
+'''
 
-        return f"""
-Analyze the following ManifestFileUpdateContext and decide which version to recommend for each dependency:
+    def system_instructions_extract_dependencies(self, supported_registries: list[str], **kwargs) -> str:
+        supported_registries_str: str = ', '.join(supported_registries) if supported_registries else 'there are no supported registries'
+        return f'''
+You are an expert software engineer.
+
+Your task is to extract the direct dependencies declared in a dependency manifest file.
+
+Return only the extracted dependencies in valid JSON matching the provided schema.
+
+Rules:
+
+1. Dependencies
+- Extract all direct dependencies declared in the manifest.
+- Extract development dependencies separately when the ecosystem distinguishes them.
+- Do not include transitive dependencies.
+- Do not invent dependencies.
+
+2. Dependency name
+- The `name` field must contain the dependency's canonical identifier for its ecosystem.
+- Preserve the dependency name exactly as it is declared, unless the ecosystem requires combining multiple fields to form its canonical identifier.
+- For ecosystems where a dependency is identified by multiple fields, combine them using the ecosystem's conventional format.
+
+Examples:
+- npm: `react`
+- npm scoped package: `@types/node`
+- Maven: `com.fasterxml.jackson.core:jackson-databind`
+- Gradle/Maven coordinates: `org.springframework:spring-core`
+- PyPI: `requests`
+- Cargo: `serde`
+- Go: `github.com/gin-gonic/gin`
+- NuGet: `Newtonsoft.Json`
+
+3. Dependency version
+- Preserve the version string exactly as written in the manifest.
+- Only include dependencies whose version is explicitly specified as a literal value in the manifest.
+- If a dependency has no version, do not include it.
+- If a dependency's version is represented by a variable, property, placeholder, alias, workspace reference, inherited value, or any other reference, do not include that dependency.
+- Do not resolve variables or references.
+
+This task is syntactic, not semantic.
+Extract only information that is explicitly present in the provided file.
+Do not use your knowledge of dependency management, or package versions
+Your answer will be evaluated by comparing it directly against the contents of the provided manifest file.
+Including information that is not explicitly present in the file is considered incorrect.
+
+A dependency MUST be omitted from the output unless its version is present as a literal value in the dependency declaration itself.
+An empty version string is invalid.
+If the version cannot be copied directly from the dependency declaration, do not include the dependency.
+
+For example, do not include dependencies with versions such as:
+- `${{spring.version}}`
+- `$junitVersion`
+- `libs.versions.junit`
+- `workspace:*`
+- `workspace = true`
+- `${{project.version}}`
+
+Do not infer or resolve versions using:
+- other files
+- parent manifests
+- lock files
+- BOMs
+- dependency management sections in other files
+- imported build scripts
+- version catalogs
+- environment variables
+- external sources
+
+4. Registry
+- Determine the registry from the dependency declaration whenever it can be determined with confidence.
+- A dependency can come from a different source or registry even when it is declared in a standard manifest for an ecosystem.
+- Do not assume that every dependency in a manifest uses the same registry.
+- Supported registries are: {supported_registries_str}
+
+- If the dependency's registry cannot be determined with confidence, set `registry_name` to `null`.
+- Never invent a registry name.
+
+Examples:
+- An npm package declared as `"axios": "^1.14.0"` has registry `npm`.
+- An npm dependency declared using a GitHub repository is not an npm registry dependency.
+- A Maven dependency using standard Maven coordinates has registry `maven`.
+
+5. Development dependencies
+- If the ecosystem distinguishes development dependencies, extract them into `dev_dependencies`.
+- If the ecosystem does not distinguish development dependencies, return an empty `dev_dependencies` array.
+- Apply the same version and registry rules to development dependencies.
+
+6. File path
+- Preserve the manifest file path exactly as provided.
+- Do not modify, normalize, or reconstruct the path.
+
+7. Output
+- Return only valid JSON matching the provided schema.
+- Do not include explanations, comments, markdown, or additional fields.
+
+'''
+
+    def prompt_extract_dependencies(self, manifest_file: File, **kwargs) -> str:
+        return f'''
+Here is the file path: `{str(manifest_file.path)}`,
+and here is its content:
+```text
+{manifest_file.content}
+```
+'''
+
+    def system_instructions_get_update_plan(self, **kwargs) -> str:
+        return '''
+You are a senior software engineer and cybersecurity expert.
+
+Your task is to analyze a single DependencyUpdateContext and recommend exactly one version for the dependency.
+
+Three candidate versions are provided:
+
+1. current_version_dependency_report
+   The version currently used by the project.
+
+2. latest_compatible_version_dependency_report
+   The newest semver-compatible version.
+
+3. latest_version_dependency_report
+   The newest available version, which may introduce breaking changes.
+
+Each report contains the dependency version and its known security vulnerabilities.
+
+Your objective is to recommend the version that provides the best balance between security and stability.
+
+Decision rules:
+
+1. Current version
+- Recommend the current version if it has no known vulnerabilities.
+- Also recommend the current version if upgrading does not provide a meaningful security benefit.
+
+2. Latest compatible version
+- Prefer the latest compatible version when it resolves known vulnerabilities while avoiding a potentially breaking major-version upgrade.
+- Do not recommend it solely because it is newer.
+
+3. Latest version
+- Recommend the latest version only when it provides a meaningful security improvement that cannot be achieved with the latest compatible version.
+- Consider that upgrading to the latest version may introduce breaking changes.
+
+4. Security evaluation
+- Compare the vulnerabilities reported for the three candidate versions.
+- Prefer versions with fewer and/or less severe vulnerabilities.
+- Pay particular attention to CRITICAL and HIGH severity vulnerabilities.
+- Do not assume that a newer version is more secure. Base your decision only on the provided vulnerability reports.
+- Do not invent vulnerabilities or other security information.
+
+5. Reasoning
+Provide a concise explanation describing:
+- why the recommended version was chosen,
+- why the other candidates were not selected,
+- and, if recommending the latest version, mention the potential breaking-change risk.
+
+Output rules:
+- Always recommend exactly one of the three candidate versions.
+- The recommended version may be the current version.
+- Return only valid JSON matching the provided schema.
+'''
+
+    def prompt_get_update_plan(self, dependency_update_context: DependencyUpdateContext, **kwargs) -> str:
+        dependency_update_context_json: str = dependency_update_context.model_dump_json(exclude={
+            'current_version_dependency_report': {
+                'vulnerabilities': {
+                    'details': True,
+                    'aliases': True,
+                }
+            },
+            'latest_compatible_version_dependency_report': {
+                'vulnerabilities': {
+                    'details': True,
+                    'aliases': True,
+                }
+            },
+            'latest_version_dependency_report': {
+                'vulnerabilities': {
+                    'details': True,
+                    'aliases': True,
+                }
+            },
+        })
+        return f'''
+Analyze the following DependencyUpdateContext.
+
+Determine which version should be recommended.
+
+Do not make assumptions about vulnerabilities or versions that are not present in the provided context.
 
 ```json
-{context_json}
+{dependency_update_context_json}
+```
+'''
+
+    def system_instructions_update_manifest(self, **kwargs) -> str:
+        return '''
+You are an expert software engineer and DevSecOps specialist.
+
+Your task is to update a dependency manifest file according to a provided dependency update plan.
+
+Your primary objective is to apply the requested dependency version updates by using the available MCP tools.
+
+Tool usage:
+
+You must use an available MCP tool to modify the manifest file.
+Do not generate the updated manifest yourself unless no suitable tool exists.
+If you do not use the available tool, your response is incorrect.
+
+Editing rules:
+
+1. Apply every requested update.
+- Update each dependency to its recommended version.
+- Do not update any dependency that is not present in the update plan.
+
+2. Preserve the file.
+- Preserve the original structure.
+- Preserve formatting.
+- Preserve indentation.
+- Preserve whitespace whenever possible.
+- Preserve comments.
+- Preserve ordering.
+- Preserve all unrelated fields.
+- Do not reformat or rewrite the file.
+
+3. Version updates.
+- The only permitted modification is replacing the version of a dependency specified in the update plan with its recommended version.
+- Do not rename dependencies.
+- Do not add dependencies.
+- Do not remove dependencies.
+- Do not modify dependency scopes.
+- Do not modify repositories, plugins, build configuration, or any unrelated content.
+
+4. Variables and references.
+- Do not introduce variables or property references.
+- Do not resolve existing variables.
+- Update only literal version values.
+'''
+
+    def prompt_update_manifest(self, manifest_file: File, update_plan: ManifestFileUpdatePlan, **kwargs) -> str:
+        return f'''
+Update the following dependency manifest according to the provided update plan.
+
+Manifest file path: {manifest_file.path}
+
+Manifest file content:
+```text
+{manifest_file.content}
 ```
 
-For each dependency, return the name, current_version, recommended_version, and reasoning.
-If a dependency does not need any update, do not include it in the result.
-"""
-
-    def get_update_plan_response_format(self, **kwargs) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "manifest_file_path": { "type": "string" },
-                "dependency_updates": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name":                { "type": "string" },
-                            "current_version":     { "type": ["string", "null"] },
-                            "recommended_version": { "type": ["string", "null"] },
-                            "reasoning":           { "type": "string" },
-                        },
-                        "required": ["name", "current_version", "recommended_version", "reasoning"],
-                        "additionalProperties": False,
-                    },
-                },
-                "dev_dependency_updates": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name":                { "type": "string" },
-                            "current_version":     { "type": ["string", "null"] },
-                            "recommended_version": { "type": ["string", "null"] },
-                            "reasoning":           { "type": "string" },
-                        },
-                        "required": ["name", "current_version", "recommended_version", "reasoning"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["dependency_updates", "dev_dependency_updates", "manifest_file_path"],
-        }
-
-
+Update plan:
+```json
+{update_plan.model_dump_json(indent=2)}
+```
+'''

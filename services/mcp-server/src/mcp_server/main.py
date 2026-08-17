@@ -17,7 +17,10 @@ async def modify_file(file_path: str, new_content: str):
         new_content=new_content
     )
     async with httpx.AsyncClient() as client:
-        response = await client.put(url, json=update_file_content_request)
+        response = await client.put(
+            url,
+            json=update_file_content_request.model_dump(mode='json'),
+        )
         response.raise_for_status()
         return response.json()
 

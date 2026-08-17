@@ -11,20 +11,22 @@ from registry_service.registry_adapters.base_registry_adapter import BaseRegistr
 load_dotenv()
 
 class LibrariesIORegistryAdapter(BaseRegistryAdapter):
+    _supported_registries: list[str] | None = None
     base_url: str = 'https://libraries.io/api'
     api_key:  str = os.getenv('LIBRARIES_IO_API_KEY', None)
 
     @override
     @staticmethod
     def get_supported_registries() -> list[str]:
-        if LibrariesIORegistryAdapter.supported_registries is None:
+        if LibrariesIORegistryAdapter._supported_registries is None:
             url: str = f'{LibrariesIORegistryAdapter.base_url}/platforms'
             params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
             response = httpx.get(url, params=params, timeout=None)
             response.raise_for_status()
             data = response.json()
-            LibrariesIORegistryAdapter.supported_registries = [platform['name'] for platform in data]
-        return LibrariesIORegistryAdapter.supported_registries
+            LibrariesIORegistryAdapter._supported_registries = [platform['name'] for platform in data]
+
+        return LibrariesIORegistryAdapter._supported_registries
 
     @override
     @staticmethod
@@ -38,7 +40,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     @staticmethod
     async def get_all_versions_dependencies(dependency: Dependency) -> list[Dependency]:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
-        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry.name)
+        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
@@ -61,7 +63,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     @staticmethod
     async def get_latest_version_dependency(dependency: Dependency) -> Dependency:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
-        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry.name)
+        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
@@ -83,7 +85,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     @staticmethod
     async def get_latest_compatible_version_dependency(dependency: Dependency) -> Dependency:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
-        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry.name)
+        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
@@ -103,17 +105,17 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
                 latest_compatible_version_dependency: Dependency = Dependency(
                     name=dependency.name,
                     version=data['versions'][i]['number'],
-                    registry=dependency.registry,
+                    registry_name=dependency.registry_name,
                 )
                 return latest_compatible_version_dependency
         
-        raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{dependency.registry.name}'.")
+        raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{dependency.registry_name}'.")
 
     @override
     @staticmethod
     async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency]:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
-        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry.name)
+        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
@@ -127,7 +129,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         latest_version_dependency: Dependency = Dependency(
             name=dependency.name,
             version=latest_stable_release_number,
-            registry=dependency.registry,
+            registry_name=dependency.registry_name,
         )
 
         current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
@@ -137,7 +139,17 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
                 latest_compatible_version_dependency: Dependency = Dependency(
                     name=dependency.name,
                     version=data['versions'][i]['number'],
-                    registry=dependency.registry,
+                    registry_name=dependency.registry_name,
                 )
                 break
+        # TODO: Sometimes this throws an error because `latest_compatible_version_dependency` is not defined/assigned.
+        # The root reason for that is the LLM is hullicinating and providing a version that does not even exist in the registry.
+        # We need to handle this case.
+        # Maybe make the latest_compatible_version_dependency optional
+        #   Or
+        # Set the latest_compatible_version_dependency to the current version
+        
+        # !!!! BUT
+        # Keep in mind that if there is no compatible version, it means even the current version does not exist in the registry.
+        # So the best absolute solution is to ignore this dependency altogether and not provide any update plan for it.
         return latest_compatible_version_dependency, latest_version_dependency

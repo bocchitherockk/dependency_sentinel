@@ -84,7 +84,8 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
         tasks = [
             client.post(
                 f'{services['llm-service']['endpoint']}/extract-dependencies',
-                params= {'model_name': 'qwen2.5-coder:1.5b'},
+                # params= {'model_name': 'qwen2.5-coder:1.5b'},
+                params= {'model_name': 'qwen3:8b'},
                 json=manifest_file.model_dump(mode='json'),
             )
             for manifest_file in detected_manifest_files
@@ -111,62 +112,59 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
     ################## HACK #####################
     ################## Return ready result without any computation #####################
     # from common.schemas.Dependency import Dependency
-    # from common.schemas.Registry import Registry
 
-    # npm_registry: Registry = Registry(name='npm', url='https://registry.npmjs.org/')
-    # maven_registry: Registry = Registry(name='maven-central', url='https://repo1.maven.org/maven2/')
     # return [
     #     ManifestFile(
     #         path='Plateforme-e-commerce-SaaS-avec-abonnements/angular/package.json',
     #         dependencies=[
-    #             Dependency(name='@angular/animations'              , version='^16.1.0' , registry=npm_registry),
-    #             Dependency(name='@angular/common'                  , version='^16.1.0' , registry=npm_registry),
-    #             Dependency(name='@angular/compiler'                , version='^16.1.0' , registry=npm_registry),
-    #             Dependency(name='@angular/core'                    , version='^16.1.0' , registry=npm_registry),
-    #             Dependency(name='@angular/forms'                   , version='^16.1.0' , registry=npm_registry),
-    #             Dependency(name='@angular/platform-browser'        , version='^16.1.0' , registry=npm_registry),
-    #             Dependency(name='@angular/platform-browser-dynamic', version='^16.1.0' , registry=npm_registry),
-    #             Dependency(name='@angular/router'                  , version='^16.1.0' , registry=npm_registry),
-    #             Dependency(name='@fortawesome/fontawesome-free'    , version='^6.4.0'  , registry=npm_registry),
-    #             Dependency(name='@ng-bootstrap/ng-bootstrap'       , version='^15.1.0' , registry=npm_registry),
-    #             Dependency(name='@okta/okta-angular'               , version='^6.2.0'  , registry=npm_registry),
-    #             Dependency(name='@okta/okta-auth-js'               , version='^6.9.0'  , registry=npm_registry),
-    #             Dependency(name='@okta/okta-signin-widget'         , version='^6.2.0'  , registry=npm_registry),
-    #             Dependency(name='@popperjs/core'                   , version='^2.11.6' , registry=npm_registry),
-    #             Dependency(name='bootstrap'                        , version='^5.2.0'  , registry=npm_registry),
-    #             Dependency(name='rxjs'                             , version='~7.8.0'  , registry=npm_registry),
-    #             Dependency(name='stripe'                           , version='^8.179.0', registry=npm_registry),
-    #             Dependency(name='tslib'                            , version='^2.3.0'  , registry=npm_registry),
-    #             Dependency(name='zone.js'                          , version='~0.13.0' , registry=npm_registry),
+    #             Dependency(name='@angular/animations'              , version='^16.1.0' , registry_name='npm'),
+    #             Dependency(name='@angular/common'                  , version='^16.1.0' , registry_name='npm'),
+    #             Dependency(name='@angular/compiler'                , version='^16.1.0' , registry_name='npm'),
+    #             Dependency(name='@angular/core'                    , version='^16.1.0' , registry_name='npm'),
+    #             Dependency(name='@angular/forms'                   , version='^16.1.0' , registry_name='npm'),
+    #             Dependency(name='@angular/platform-browser'        , version='^16.1.0' , registry_name='npm'),
+    #             Dependency(name='@angular/platform-browser-dynamic', version='^16.1.0' , registry_name='npm'),
+    #             Dependency(name='@angular/router'                  , version='^16.1.0' , registry_name='npm'),
+    #             Dependency(name='@fortawesome/fontawesome-free'    , version='^6.4.0'  , registry_name='npm'),
+    #             Dependency(name='@ng-bootstrap/ng-bootstrap'       , version='^15.1.0' , registry_name='npm'),
+    #             Dependency(name='@okta/okta-angular'               , version='^6.2.0'  , registry_name='npm'),
+    #             Dependency(name='@okta/okta-auth-js'               , version='^6.9.0'  , registry_name='npm'),
+    #             Dependency(name='@okta/okta-signin-widget'         , version='^6.2.0'  , registry_name='npm'),
+    #             Dependency(name='@popperjs/core'                   , version='^2.11.6' , registry_name='npm'),
+    #             Dependency(name='bootstrap'                        , version='^5.2.0'  , registry_name='npm'),
+    #             Dependency(name='rxjs'                             , version='~7.8.0'  , registry_name='npm'),
+    #             Dependency(name='stripe'                           , version='^8.179.0', registry_name='npm'),
+    #             Dependency(name='tslib'                            , version='^2.3.0'  , registry_name='npm'),
+    #             Dependency(name='zone.js'                          , version='~0.13.0' , registry_name='npm'),
     #         ],
     #         dev_dependencies=[
-    #             Dependency(name='@angular-devkit/build-angular', version='^16.1.4', registry=npm_registry),
-    #             Dependency(name='@angular/cli'                 , version='~16.1.4', registry=npm_registry),
-    #             Dependency(name='@angular/compiler-cli'        , version='^16.1.0', registry=npm_registry),
-    #             Dependency(name='@angular/localize'            , version='^16.1.0', registry=npm_registry),
-    #             Dependency(name='@types/jasmine'               , version='~4.3.0' , registry=npm_registry),
-    #             Dependency(name='jasmine-core'                 , version='~4.6.0' , registry=npm_registry),
-    #             Dependency(name='karma'                        , version='~6.4.0' , registry=npm_registry),
-    #             Dependency(name='karma-chrome-launcher'        , version='~3.2.0' , registry=npm_registry),
-    #             Dependency(name='karma-coverage'               , version='~2.2.0' , registry=npm_registry),
-    #             Dependency(name='karma-jasmine'                , version='~5.1.0' , registry=npm_registry),
-    #             Dependency(name='karma-jasmine-html-reporter'  , version='~2.1.0' , registry=npm_registry),
-    #             Dependency(name='typescript'                   , version='~5.1.3' , registry=npm_registry),
+    #             Dependency(name='@angular-devkit/build-angular', version='^16.1.4', registry_name='npm'),
+    #             Dependency(name='@angular/cli'                 , version='~16.1.4', registry_name='npm'),
+    #             Dependency(name='@angular/compiler-cli'        , version='^16.1.0', registry_name='npm'),
+    #             Dependency(name='@angular/localize'            , version='^16.1.0', registry_name='npm'),
+    #             Dependency(name='@types/jasmine'               , version='~4.3.0' , registry_name='npm'),
+    #             Dependency(name='jasmine-core'                 , version='~4.6.0' , registry_name='npm'),
+    #             Dependency(name='karma'                        , version='~6.4.0' , registry_name='npm'),
+    #             Dependency(name='karma-chrome-launcher'        , version='~3.2.0' , registry_name='npm'),
+    #             Dependency(name='karma-coverage'               , version='~2.2.0' , registry_name='npm'),
+    #             Dependency(name='karma-jasmine'                , version='~5.1.0' , registry_name='npm'),
+    #             Dependency(name='karma-jasmine-html-reporter'  , version='~2.1.0' , registry_name='npm'),
+    #             Dependency(name='typescript'                   , version='~5.1.3' , registry_name='npm'),
     #         ]
     #     ),
     #     ManifestFile(
     #         path='Plateforme-e-commerce-SaaS-avec-abonnements/notifications-service/pom.xml',
     #         dependencies=[
-    #             Dependency(name='jackson-databind', version='2.15.2', registry=maven_registry),
+    #             Dependency(name='com.fasterxml.jackson.core:jackson-databind', version='2.15.2', registry_name='maven'),
     #         ],
     #         dev_dependencies=[]
     #     ),
     #     ManifestFile(
     #         path='Plateforme-e-commerce-SaaS-avec-abonnements/orders-service/pom.xml',
     #         dependencies=[
-    #             Dependency(name='springdoc-openapi-starter-webmvc-ui', version='2.0.0'  , registry=maven_registry),
-    #             Dependency(name='okta-spring-boot-starter'           , version='3.0.4'  , registry=maven_registry),
-    #             Dependency(name='stripe-java'                        , version='22.28.0', registry=maven_registry),
+    #             Dependency(name='org.springdoc:springdoc-openapi-starter-webmvc-ui', version='2.0.0'  , registry_name='maven'),
+    #             Dependency(name='com.okta.spring:okta-spring-boot-starter'         , version='3.0.4'  , registry_name='maven'),
+    #             Dependency(name='com.stripe:stripe-java'                           , version='22.28.0', registry_name='maven'),
     #         ],
     #         dev_dependencies=[]
     #     )
