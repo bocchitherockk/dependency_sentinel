@@ -6,8 +6,8 @@ from llm_service.llm_selector import LLMSelector
 from common.config import services
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
-from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
-from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
+from common.schemas.DependencyUpdateContext import DependencyUpdateContext
+from common.schemas.DependencyUpdatePlan import DependencyUpdatePlan
 from common.schemas.UpdateManifestRequest import UpdateManifestRequest
 
 app = FastAPI()
@@ -31,11 +31,11 @@ async def extract_dependencies(
 
 @app.post("/get-update-plan")
 async def get_update_plan(
-    update_context: ManifestFileUpdateContext = Body(...),
+    dependency_update_context: DependencyUpdateContext = Body(...),
     model_name: str | None = Query(None)
-) -> ManifestFileUpdatePlan:
+) -> DependencyUpdatePlan:
     model = LLMSelector.get_llm_model(model_name)
-    return await model.get_update_plan(update_context)
+    return await model.get_update_plan(dependency_update_context)
 
 @app.post("/update-manifest")
 async def update_manifest(

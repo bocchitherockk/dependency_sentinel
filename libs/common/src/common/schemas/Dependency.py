@@ -3,4 +3,4 @@ from pydantic import BaseModel
 class Dependency(BaseModel):
     name: str
     version: str
-    registry_name: str
+    registry_name: str | None
