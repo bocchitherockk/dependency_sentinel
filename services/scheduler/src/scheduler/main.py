@@ -1,4 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager
+import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Body
 import uvicorn
@@ -8,13 +11,44 @@ from common.schemas.StartScanRequest import StartScanRequest
 from events import EventProducer
 from events.schemas.ScanStartedEvent import ScanStartedEvent
 
+from scheduler.utils import load_scan_schedule
+
+os.chdir('./services/scheduler/') # change current working directory
 
 event_producer: EventProducer = EventProducer()
+background_tasks: list[asyncio.Task] = []
+
+async def schedule_periodic_scan(repository_url: str, interval_seconds: float) -> None:
+    while True:
+        try:
+            scan_started_event = ScanStartedEvent(
+                key=repository_url,
+                repository_url=repository_url,
+            )
+            await event_producer.publish(event=scan_started_event)
+        except Exception as e:
+            print(f"Failed to publish scheduled scan for {repository_url}: {e}")
+
+        await asyncio.sleep(interval_seconds)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await event_producer.start()
+    schedule = load_scan_schedule(Path('scan_schedule.json'))
+    for record in schedule:
+        task = asyncio.create_task(
+            schedule_periodic_scan(
+                repository_url=record['repository_url'],
+                interval_seconds=float(record['time_interval']),
+            )
+        )
+        background_tasks.append(task)
+
     yield
+
+    for task in background_tasks:
+        task.cancel()
+    await asyncio.gather(*background_tasks, return_exceptions=True)
     await event_producer.stop()
 
 app = FastAPI(
