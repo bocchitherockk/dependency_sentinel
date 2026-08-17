@@ -22,6 +22,7 @@ event_consumer: EventConsumer = EventConsumer(
 async def handle_topic_repository_scanned(key: str, value: dict, msg):
     repository_scanned_event: RepositoryScannedEvent = RepositoryScannedEvent(**value)
     repository_name: str = repository_scanned_event.repository_name
+    repository_owner_name: str = repository_scanned_event.repository_owner_name
     current_manifest_files: list[ManifestFile] = repository_scanned_event.detected_manifest_files
 
     manifest_files_update_context: list[ManifestFileUpdateContext] = await asyncio.gather(*[
@@ -31,7 +32,10 @@ async def handle_topic_repository_scanned(key: str, value: dict, msg):
 
     dependencies_queried_event: DependenciesQueriedEvent = DependenciesQueriedEvent(
         key=repository_name,
+        repository_url=repository_scanned_event.repository_url,
         repository_name=repository_name,
+        repository_owner_name=repository_owner_name,
+        default_branch=repository_scanned_event.default_branch,
         manifest_files_update_context=manifest_files_update_context,
     )
     await event_producer.publish(event=dependencies_queried_event)

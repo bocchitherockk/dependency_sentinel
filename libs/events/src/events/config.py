@@ -11,6 +11,7 @@ class KafkaConfig:
     TOPIC_REPOSITORY_CLONED  = "topic-repository-cloned"
     TOPIC_REPOSITORY_SCANNED = "topic-repository-scanned"
     TOPIC_DEPENDENCIES_QUERIED = "topic-dependencies-queried"
+    TOPIC_MANIFEST_FILES_EDITED = "topic-manifest-files-edited"
     TOPIC_SCAN_COMPLETED = "topic-scan-completed"
 
     # Consumer Groups

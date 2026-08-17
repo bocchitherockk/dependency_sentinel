@@ -415,6 +415,20 @@ Editing rules:
 - Do not introduce variables or property references.
 - Do not resolve existing variables.
 - Update only literal version values.
+
+
+Response requirements:
+
+After completing the manifest modifications, provide a concise summary of the changes made.
+
+The summary must:
+- State that the manifest was updated successfully.
+- Identify the dependencies whose versions were changed.
+- State the current version and resulting version for each changed dependency.
+- Briefly explain the overall nature of the changes.
+- Base the summary on the changes actually made to the manifest, not merely on the update plan.
+- Do not reproduce the full manifest.
+- Do not repeat the detailed reasoning from each dependency update plan unless it is necessary to explain the overall change.
 '''
 
     def prompt_update_manifest(self, manifest_file: File, update_plan: ManifestFileUpdatePlan, **kwargs) -> str:

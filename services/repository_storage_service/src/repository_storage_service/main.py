@@ -6,12 +6,15 @@ import asyncio
 import fastapi
 from fastapi import FastAPI, HTTPException
 import uvicorn
-from git import Repo
 
 from repository_storage_service.utils import (
     get_fs_object,
     remove_repository_name_prefix,
+    get_repository_name_and_owner_name,
+    clone_repository,
     create_branch,
+    commit_and_push_changes,
+    create_pull_request,
 )
 
 from common.config import services
@@ -19,9 +22,12 @@ from common.schemas.CreateBranchRequest import CreateBranchRequest
 from common.schemas.UpdateFileContentRequest import UpdateFileContentRequest
 from common.schemas.Directory import Directory
 from common.schemas.File import File
+
 from events import EventProducer, EventConsumer, KafkaConfig
 from events.schemas.ScanStartedEvent import ScanStartedEvent
 from events.schemas.RepositoryClonedEvent import RepositoryClonedEvent
+from events.schemas.ManifestFilesEditedEvent import ManifestFilesEditedEvent
+from events.schemas.ScanCompletedEvent import ScanCompletedEvent
 
 
 os.chdir('./services/repository_storage_service/') # change current working directory
@@ -29,50 +35,80 @@ os.makedirs('./repositories', exist_ok=True)
 
 
 event_producer: EventProducer = EventProducer()
-event_consumer: EventConsumer = EventConsumer(
+scan_started_event_consumer: EventConsumer = EventConsumer(
     topic=KafkaConfig.TOPIC_SCAN_STARTED,
+    group_id=KafkaConfig.CONSUMER_GROUP_REPOSITORY_STORAGE_SERVICE
+)
+manifest_files_edited_event_consumer: EventConsumer = EventConsumer(
+    topic=KafkaConfig.TOPIC_MANIFEST_FILES_EDITED,
     group_id=KafkaConfig.CONSUMER_GROUP_REPOSITORY_STORAGE_SERVICE
 )
 
 async def handle_topic_scan_started(key: str, value: dict, msg):
     scan_started_event: ScanStartedEvent = ScanStartedEvent(**value)
     repository_url: str = scan_started_event.repository_url
-    # TODO: The repository name extraction logic might need to be improved to handle different URL formats and edge cases.
-    repository_name: str = repository_url.split('/')[-1].replace('.git', '')
+    repository_name, repository_owner_name = get_repository_name_and_owner_name(repository_url)
     destination: Path = Path('./repositories') / repository_name
 
-    if not destination.exists():
-        Repo.clone_from(repository_url, destination)
-    else:
-        # Pull the latest changes if the repository already exists
-        # Hard reset and clean to ensure the local repository state exactly matches the remote state
-        repo: Repo = Repo(destination)
-        origin = repo.remotes.origin
-        origin.fetch()
-        current_branch = repo.active_branch.name
-        repo.git.reset('--hard', f'origin/{current_branch}')
-        repo.git.clean('-fd')
+    default_branch: str = clone_repository(repository_url, destination)
 
     repository_cloned_event: RepositoryClonedEvent = RepositoryClonedEvent(
-        repository_name=repository_name,
         key=repository_name,
+        repository_url=repository_url,
+        repository_name=repository_name,
+        repository_owner_name=repository_owner_name,
+        default_branch=default_branch,
+    )
+    await event_producer.publish(event=repository_cloned_event)
+
+async def handle_topic_manifest_files_edited(key: str, value: dict, msg):
+    manifest_files_edited_event: ManifestFilesEditedEvent = ManifestFilesEditedEvent(**value)
+    if manifest_files_edited_event.summary == '':
+        # If the summary is empty, it means that no manifest file was modified
+        # and a git branch was not created
+        # so we don't need to commit any changes or create a pull request.
+        return
+
+    repository_name: str = manifest_files_edited_event.repository_name
+    repository_owner_name: str = manifest_files_edited_event.repository_owner_name
+
+    destination: Path = Path('./repositories') / repository_name
+    commit_and_push_changes(destination)
+    create_pull_request(
+        repository_name=repository_name,
+        repository_owner_name=repository_owner_name,
+        branch_name=manifest_files_edited_event.default_branch,
+        body=manifest_files_edited_event.summary
     )
 
-    await event_producer.publish(event=repository_cloned_event)
+    scan_completed_event: ScanCompletedEvent = ScanCompletedEvent(
+        key=repository_name,
+        repository_name=repository_name,
+        repository_owner_name=repository_owner_name,
+    )
+    await event_producer.publish(event=scan_completed_event)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gère le cycle de vie du service"""
     await event_producer.start()
-    await event_consumer.start()
-    consumer_task = asyncio.create_task(
-        event_consumer.consume(callback=handle_topic_scan_started)
+    await scan_started_event_consumer.start()
+    await manifest_files_edited_event_consumer.start()
+
+    scan_started_event_consumer_task = asyncio.create_task(
+        scan_started_event_consumer.consume(callback=handle_topic_scan_started)
+    )
+    manifest_files_edited_event_consumer_task = asyncio.create_task(
+        manifest_files_edited_event_consumer.consume(callback=handle_topic_manifest_files_edited)
     )
 
     yield
 
-    consumer_task.cancel()
-    await event_consumer.stop()
+    scan_started_event_consumer_task.cancel()
+    manifest_files_edited_event_consumer_task.cancel()
+    await scan_started_event_consumer.stop()
+    await manifest_files_edited_event_consumer.stop()
     await event_producer.stop()
 
 
@@ -104,9 +140,6 @@ def get_fs_object_endpoint(
 
     return remove_repository_name_prefix(fs_object, root_path)
 
-# This endpoint should be called by the Dependency modifier service (which is initially called by the LLM through the MCP server)
-# note: the Dependency modifier service will be responsible for providing correct content to be written in the file
-# TODO: this endpoint needs some changes, but for now i will leave it, up until we need to change the content of files
 @app.put('/repositories/{path:path}')
 def update_file_content_endpoint(
     path: str = fastapi.Path(...),
