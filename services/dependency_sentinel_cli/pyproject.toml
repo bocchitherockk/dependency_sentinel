@@ -1,0 +1,19 @@
+[project]
+name = "dependency-sentinel-cli"
+version = "0.1.0"
+description = "Launcher CLI for the dependency sentinel workspace"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "common",
+    "httpx>=0.27.0",
+]
+
+[tool.uv.sources]
+common = { workspace = true }
+
+[project.scripts]
+dependency-sentinel-cli = "dependency_sentinel_cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dependency_sentinel_cli"]
