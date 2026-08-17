@@ -21,6 +21,7 @@ members = [
 ]
 
 [tool.uv.sources]
+scheduler = { workspace = true }
 gateway = { workspace = true }
 repository-storage-service = { workspace = true }
 repository_scanner_service = { workspace = true }
