@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+import httpx
 import fastmcp
 from pydantic import TypeAdapter
 
@@ -53,10 +54,15 @@ class LLMClient(ABC):
         return result
 
     async def extract_dependencies(self, manifest_file: File) -> ManifestFile:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{services['registry-service']['endpoint']}/supported-registries")
+        response.raise_for_status()
+        supported_registries: list[str] = response.json()
+
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
-                'content': self.system_instructions_extract_dependencies()
+                'content': self.system_instructions_extract_dependencies(supported_registries=supported_registries)
             },
             {
                 'role': 'user',
@@ -174,10 +180,9 @@ Classify files using only these paths. Do not infer file contents.
 ```
 '''
 
-    def system_instructions_extract_dependencies(self, **kwargs) -> str:
-        # TODO: change the list of supporeted registries, there are not the only ones
-        # the list could be contructed dynamically
-        return '''
+    def system_instructions_extract_dependencies(self, supported_registries: list[str], **kwargs) -> str:
+        supported_registries_str: str = ', '.join(supported_registries) if supported_registries else 'there are no supported registries'
+        return f'''
 You are an expert software engineer.
 
 Your task is to extract the direct dependencies declared in a dependency manifest file.
@@ -225,12 +230,12 @@ An empty version string is invalid.
 If the version cannot be copied directly from the dependency declaration, do not include the dependency.
 
 For example, do not include dependencies with versions such as:
-- `${spring.version}`
+- `${{spring.version}}`
 - `$junitVersion`
 - `libs.versions.junit`
 - `workspace:*`
 - `workspace = true`
-- `${project.version}`
+- `${{project.version}}`
 
 Do not infer or resolve versions using:
 - other files
@@ -247,9 +252,8 @@ Do not infer or resolve versions using:
 - Determine the registry from the dependency declaration whenever it can be determined with confidence.
 - A dependency can come from a different source or registry even when it is declared in a standard manifest for an ecosystem.
 - Do not assume that every dependency in a manifest uses the same registry.
-- Supported registries are:
-  - npm
-  - maven
+- Supported registries are: {supported_registries_str}
+
 - If the dependency's registry cannot be determined with confidence, set `registry_name` to `null`.
 - Never invent a registry name.
 

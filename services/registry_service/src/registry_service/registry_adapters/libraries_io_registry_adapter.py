@@ -11,20 +11,22 @@ from registry_service.registry_adapters.base_registry_adapter import BaseRegistr
 load_dotenv()
 
 class LibrariesIORegistryAdapter(BaseRegistryAdapter):
+    _supported_registries: list[str] | None = None
     base_url: str = 'https://libraries.io/api'
     api_key:  str = os.getenv('LIBRARIES_IO_API_KEY', None)
 
     @override
     @staticmethod
     def get_supported_registries() -> list[str]:
-        if LibrariesIORegistryAdapter.supported_registries is None:
+        if LibrariesIORegistryAdapter._supported_registries is None:
             url: str = f'{LibrariesIORegistryAdapter.base_url}/platforms'
             params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
             response = httpx.get(url, params=params, timeout=None)
             response.raise_for_status()
             data = response.json()
-            LibrariesIORegistryAdapter.supported_registries = [platform['name'] for platform in data]
-        return LibrariesIORegistryAdapter.supported_registries
+            LibrariesIORegistryAdapter._supported_registries = [platform['name'] for platform in data]
+
+        return LibrariesIORegistryAdapter._supported_registries
 
     @override
     @staticmethod
@@ -140,4 +142,14 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
                     registry_name=dependency.registry_name,
                 )
                 break
+        # TODO: Sometimes this throws an error because `latest_compatible_version_dependency` is not defined/assigned.
+        # The root reason for that is the LLM is hullicinating and providing a version that does not even exist in the registry.
+        # We need to handle this case.
+        # Maybe make the latest_compatible_version_dependency optional
+        #   Or
+        # Set the latest_compatible_version_dependency to the current version
+        
+        # !!!! BUT
+        # Keep in mind that if there is no compatible version, it means even the current version does not exist in the registry.
+        # So the best absolute solution is to ignore this dependency altogether and not provide any update plan for it.
         return latest_compatible_version_dependency, latest_version_dependency

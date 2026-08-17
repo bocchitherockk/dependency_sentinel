@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from common.schemas.Dependency import Dependency
 
 class BaseRegistryAdapter(ABC):
-    supported_registries: list[str] | None = None
+    _supported_registries: list[str] | None = None
 
     @staticmethod
     @abstractmethod

@@ -11,6 +11,7 @@ from events import EventProducer, EventConsumer, KafkaConfig
 from events.schemas.RepositoryScannedEvent import RepositoryScannedEvent
 from events.schemas.DependenciesQueriedEvent import DependenciesQueriedEvent
 from registry_service.utils import get_manifest_file_update_context
+from registry_service.registry_selector import RegistrySelector
 
 event_producer: EventProducer = EventProducer()
 event_consumer: EventConsumer = EventConsumer(
@@ -49,6 +50,13 @@ app = FastAPI(
     description="Microservice pour la résolution des versions, l'analyse de sécurité OSV et la génération du rapport LLM.",
     lifespan=lifespan
 )
+
+@app.get('/supported-registries')
+def get_supported_registries_endpoint() -> list[str]:
+    registries: list[str] = []
+    for registry_adapter in RegistrySelector.all_registry_adapters:
+        registries.extend(registry_adapter.get_supported_registries())
+    return registries
 
 def main() -> None:
     uvicorn.run(
