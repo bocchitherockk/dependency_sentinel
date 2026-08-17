@@ -50,6 +50,9 @@ class GeminiClient(LLMClient):
                     system_instruction=messages[0]['content'],
                     temperature=temperature,
                     tools=tools_list,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                        disable=True,
+                    )
                 )
             )
             candidate: types.Candidate = response.candidates[0]
