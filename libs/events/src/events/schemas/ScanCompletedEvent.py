@@ -5,4 +5,5 @@ from common.schemas.File import File
 
 class ScanCompletedEvent(BaseEvent):
     event_type: str = KafkaConfig.TOPIC_SCAN_COMPLETED
-    updated_manifest_files: list[File]
+    repository_name: str
+    repository_owner_name: str

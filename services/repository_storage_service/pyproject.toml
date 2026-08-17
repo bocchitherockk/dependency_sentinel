@@ -9,7 +9,9 @@ dependencies = [
     "events",
     "fastapi>=0.139.2",
     "gitpython>=3.1.52",
+    "pygithub>=2.9.1",
     "uvicorn>=0.51.0",
+    "python-dotenv>=1.2.2",
 ]
 
 [tool.uv.sources]

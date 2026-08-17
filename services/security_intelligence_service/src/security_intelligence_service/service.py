@@ -162,5 +162,3 @@ async def process_security_intelligence(
     updated_manifest_files: list[File] = await get_manifest_files(manifest_files_update_plans)
 
     return updated_manifest_files
-
-    # TODO: Étape 6 : Commit et push des fichiers mis à jour sur la branche Git

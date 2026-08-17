@@ -9,7 +9,7 @@ from common.schemas.File import File
 from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
 from events import EventConsumer, EventProducer, KafkaConfig
 from events.schemas.DependenciesQueriedEvent import DependenciesQueriedEvent
-from events.schemas.ScanCompletedEvent import ScanCompletedEvent
+from events.schemas.ManifestFilesEditedEvent import ManifestFilesEditedEvent
 from security_intelligence_service.service import process_security_intelligence
 
 
@@ -22,14 +22,19 @@ event_consumer: EventConsumer = EventConsumer(
 async def handle_topic_dependencies_queried(key: str, value: dict, msg):
     dependencies_queried_event: DependenciesQueriedEvent = DependenciesQueriedEvent(**value)
     repository_name: str = dependencies_queried_event.repository_name
+    repository_owner_name: str = dependencies_queried_event.repository_owner_name
     manifest_files_update_context: list[ManifestFileUpdateContext] = dependencies_queried_event.manifest_files_update_context
 
     updated_manifest_files: list[File] = await process_security_intelligence(repository_name, manifest_files_update_context)
-    scan_completed_event: ScanCompletedEvent = ScanCompletedEvent(
+    manifest_files_edited_event: ManifestFilesEditedEvent = ManifestFilesEditedEvent(
         key=repository_name,
+        repository_url=dependencies_queried_event.repository_url,
+        repository_name=repository_name,
+        repository_owner_name=repository_owner_name,
+        default_branch=dependencies_queried_event.default_branch,
         updated_manifest_files=updated_manifest_files
     )
-    await event_producer.publish(event=scan_completed_event)
+    await event_producer.publish(event=manifest_files_edited_event)
 
 
 @asynccontextmanager

@@ -21,13 +21,17 @@ event_consumer: EventConsumer = EventConsumer(
 async def handle_topic_repository_cloned(key: str, value: dict, msg):
     repository_cloned_event: RepositoryClonedEvent = RepositoryClonedEvent(**value)
     repository_name = repository_cloned_event.repository_name
+    repository_owner_name = repository_cloned_event.repository_owner_name
     if not repository_name:
         raise ValueError("Repository name cannot be empty.")
 
     try:
         detected_manifest_files: list[ManifestFile] = await scan_repository(repository_name)
         repository_scanned_event: RepositoryScannedEvent = RepositoryScannedEvent(
+            repository_url=repository_cloned_event.repository_url,
             repository_name=repository_name,
+            repository_owner_name=repository_owner_name,
+            default_branch=repository_cloned_event.default_branch,
             detected_manifest_files=detected_manifest_files,
             key=repository_name
         )
