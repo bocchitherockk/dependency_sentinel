@@ -63,7 +63,7 @@ async def handle_topic_scan_started(key: str, value: dict, msg):
 
 async def handle_topic_manifest_files_edited(key: str, value: dict, msg):
     manifest_files_edited_event: ManifestFilesEditedEvent = ManifestFilesEditedEvent(**value)
-    if manifest_files_edited_event.summary == '':
+    if manifest_files_edited_event.summary is None:
         # If the summary is empty, it means that no manifest file was modified
         # and a git branch was not created
         # so we don't need to commit any changes or create a pull request.
@@ -77,7 +77,7 @@ async def handle_topic_manifest_files_edited(key: str, value: dict, msg):
     create_pull_request(
         repository_name=repository_name,
         repository_owner_name=repository_owner_name,
-        branch_name=manifest_files_edited_event.default_branch,
+        branch_name=manifest_files_edited_event.update_branch,
         body=manifest_files_edited_event.summary
     )
 

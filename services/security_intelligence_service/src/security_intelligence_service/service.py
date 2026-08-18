@@ -95,7 +95,7 @@ async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpd
 async def analyze_update_context_and_update_manifests(
     repository_name: str,
     manifest_files_update_context: list[ManifestFileUpdateContext]
-) -> str:
+) -> tuple[str, str] | tuple[None, None]:
     """
     Orchestre l'analyse d'intelligence de sécurité :
     Pour chaque ManifestFileUpdateContext reçu via Kafka :
@@ -132,7 +132,7 @@ async def analyze_update_context_and_update_manifests(
     #   Pas de création de branche, pas de modification de fichiers.
     # ─────────────────────────────────────────────────────────────────
     if not manifest_files_update_plans:
-        return ''
+        return None, None
 
     # ─────────────────────────────────────────────────────────────────
     # Étape 3 : Créer une nouvelle branche Git
@@ -164,4 +164,4 @@ async def analyze_update_context_and_update_manifests(
         summary += f"Reasoning:\n{reasoning}\n"
         summary += "───────────────────────────────────────────\n"
 
-    return summary
+    return branch_name, summary

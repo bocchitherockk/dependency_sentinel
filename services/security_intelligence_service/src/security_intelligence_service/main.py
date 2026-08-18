@@ -25,7 +25,7 @@ async def handle_topic_dependencies_queried(key: str, value: dict, msg):
     repository_owner_name: str = dependencies_queried_event.repository_owner_name
     manifest_files_update_context: list[ManifestFileUpdateContext] = dependencies_queried_event.manifest_files_update_context
 
-    summary: str = await analyze_update_context_and_update_manifests(
+    branch_name, summary = await analyze_update_context_and_update_manifests(
         repository_name,
         manifest_files_update_context,
     )
@@ -35,6 +35,7 @@ async def handle_topic_dependencies_queried(key: str, value: dict, msg):
         repository_name=repository_name,
         repository_owner_name=repository_owner_name,
         default_branch=dependencies_queried_event.default_branch,
+        update_branch=branch_name,
         summary=summary,
     )
     await event_producer.publish(event=manifest_files_edited_event)

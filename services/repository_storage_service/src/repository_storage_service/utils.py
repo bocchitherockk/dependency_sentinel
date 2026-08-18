@@ -98,8 +98,8 @@ def commit_and_push_changes(repository_path: Path) -> None:
     repo = Repo(repository_path)
     repo.git.add(A=True)  # Stage all changes
     repo.index.commit('Update manifest files')
-    origin = repo.remote(name='origin')
-    origin.push()
+    current_branch = repo.active_branch.name
+    repo.git.push('-u', 'origin', current_branch)
 
 def create_pull_request(repository_name: str, repository_owner_name: str, branch_name: str, body: str) -> None:
     github_access_token: str = os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')

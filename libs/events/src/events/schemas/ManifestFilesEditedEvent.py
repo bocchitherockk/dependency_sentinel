@@ -8,4 +8,5 @@ class ManifestFilesEditedEvent(BaseEvent):
     repository_name: str
     repository_owner_name: str
     default_branch: str
-    summary: str
+    update_branch: str | None
+    summary: str | None
