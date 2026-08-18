@@ -5,7 +5,7 @@ import sys
 
 import httpx
 
-from common.schemas import StartScanRequest
+from common.schemas.StartScanRequest import StartScanRequest
 from common.config import services
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
