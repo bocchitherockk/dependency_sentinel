@@ -54,7 +54,7 @@ class LLMClient(ABC):
         return result
 
     async def extract_dependencies(self, manifest_file: File) -> ManifestFile:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             response = await client.get(f"{services['registry-service']['endpoint']}/supported-registries")
         response.raise_for_status()
         supported_registries: list[str] = response.json()

@@ -43,17 +43,19 @@ class GeminiClient(LLMClient):
         ]
 
         while True:
+            config: types.GenerateContentConfig = types.GenerateContentConfig(
+                system_instruction=messages[0]['content'],
+                temperature=temperature,
+            )
+            if mcp_client is not None:
+                config.tools = tools_list
+                config.automatic_function_calling = types.AutomaticFunctionCallingConfig(
+                    disable=True,
+                )
             response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=messages[0]['content'],
-                    temperature=temperature,
-                    tools=tools_list,
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                        disable=True,
-                    )
-                )
+                config=config
             )
             candidate: types.Candidate = response.candidates[0]
             model_parts: list[types.Part] = []
