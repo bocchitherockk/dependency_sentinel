@@ -68,9 +68,9 @@ async def _detect_manifest_files(flattened_repository_files: list[File]) -> list
     ################## HACK #####################
     ################## Return ready result without any computation #####################
     # return [
-    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/angular/package.json", name="package.json"),
-    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/notifications-service/pom.xml", name="pom.xml"),
-    #     File(path="Plateforme-e-commerce-SaaS-avec-abonnements/orders-service/pom.xml", name="pom.xml"),
+    #     File(path="plateform-saas-test/angular/package.json", name="package.json"),
+    #     File(path="plateform-saas-test/notifications-service/pom.xml", name="pom.xml"),
+    #     File(path="plateform-saas-test/orders-service/pom.xml", name="pom.xml"),
     # ]
     ################## END #####################
 
@@ -84,8 +84,9 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
         tasks = [
             client.post(
                 f'{services['llm-service']['endpoint']}/extract-dependencies',
-                # params= {'model_name': 'qwen2.5-coder:1.5b'},
-                params= {'model_name': 'qwen3:8b'},
+                params= {'model_name': 'qwen2.5-coder:1.5b'},
+                # params= {'model_name': 'qwen3:8b'},
+                # params= {'model_name': 'gemini-3.5-flash-lite'},
                 json=manifest_file.model_dump(mode='json'),
             )
             for manifest_file in detected_manifest_files
@@ -115,7 +116,7 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
 
     # return [
     #     ManifestFile(
-    #         path='Plateforme-e-commerce-SaaS-avec-abonnements/angular/package.json',
+    #         path='plateform-saas-test/angular/package.json',
     #         dependencies=[
     #             Dependency(name='@angular/animations'              , version='^16.1.0' , registry_name='npm'),
     #             Dependency(name='@angular/common'                  , version='^16.1.0' , registry_name='npm'),
@@ -153,14 +154,14 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
     #         ]
     #     ),
     #     ManifestFile(
-    #         path='Plateforme-e-commerce-SaaS-avec-abonnements/notifications-service/pom.xml',
+    #         path='plateform-saas-test/notifications-service/pom.xml',
     #         dependencies=[
     #             Dependency(name='com.fasterxml.jackson.core:jackson-databind', version='2.15.2', registry_name='maven'),
     #         ],
     #         dev_dependencies=[]
     #     ),
     #     ManifestFile(
-    #         path='Plateforme-e-commerce-SaaS-avec-abonnements/orders-service/pom.xml',
+    #         path='plateform-saas-test/orders-service/pom.xml',
     #         dependencies=[
     #             Dependency(name='org.springdoc:springdoc-openapi-starter-webmvc-ui', version='2.0.0'  , registry_name='maven'),
     #             Dependency(name='com.okta.spring:okta-spring-boot-starter'         , version='3.0.4'  , registry_name='maven'),

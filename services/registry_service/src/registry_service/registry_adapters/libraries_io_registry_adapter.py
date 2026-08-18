@@ -134,7 +134,10 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
         current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
         for i in range(len(data['versions']) - 1, -1, -1):
-            iter_version = semver.VersionInfo.parse(data['versions'][i]['number'])
+            try:
+                iter_version = semver.VersionInfo.parse(data['versions'][i]['number'])
+            except ValueError:
+                continue
             if iter_version.major == current_version.major:
                 latest_compatible_version_dependency: Dependency = Dependency(
                     name=dependency.name,

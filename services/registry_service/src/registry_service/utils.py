@@ -39,10 +39,14 @@ async def get_dependency_update_context(dependency: Dependency) -> DependencyUpd
 async def get_manifest_file_update_context(manifest_file: ManifestFile) -> ManifestFileUpdateContext:
     dependencies_update_context, dev_dependencies_update_context = await asyncio.gather(
         asyncio.gather(*[
-            get_dependency_update_context(dependency) for dependency in manifest_file.dependencies
+            get_dependency_update_context(dependency)
+            for dependency in manifest_file.dependencies
+            if dependency.registry_name is not None
         ]),
         asyncio.gather(*[
-            get_dependency_update_context(dependency) for dependency in manifest_file.dev_dependencies
+            get_dependency_update_context(dependency)
+            for dependency in manifest_file.dev_dependencies
+            if dependency.registry_name is not None
         ])
     )
     return ManifestFileUpdateContext(
