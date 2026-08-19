@@ -10,7 +10,7 @@ pipeline {
 
     environment {
         OLLAMA_URL = 'http://127.0.0.1:11434'
-        OLLAMA_MODEL = 'qwen2.5-coder:1.5b'
+        OLLAMA_MODELS = 'qwen2.5-coder:1.5b,qwen3:8b'
         OLLAMA_TIMEOUT_SECONDS = '300'
         UV_NO_PROGRESS = '1'
     }
@@ -232,7 +232,7 @@ Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
             }
         }
 
-        stage('Verify Ollama Model') {
+        stage('Verify Ollama Models') {
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
@@ -250,26 +250,30 @@ Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
                     )
 
                     Write-Host "Available Ollama models:"
-
                     foreach ($modelName in $availableModels) {
                         Write-Host "- $modelName"
                     }
 
-                    if ($availableModels -notcontains $env:OLLAMA_MODEL) {
-                        Write-Host "Model $env:OLLAMA_MODEL is missing. Pulling it now..."
+                    $requiredModels = $env:OLLAMA_MODELS -split ","
 
-                        $pullBody = @{
-                            model = $env:OLLAMA_MODEL
-                            stream = $false
-                        } | ConvertTo-Json -Depth 5
+                    foreach ($requiredModel in $requiredModels) {
+                        $requiredModel = $requiredModel.Trim()
+                        if ($availableModels -notcontains $requiredModel) {
+                            Write-Host "Model $requiredModel is missing. Pulling it now..."
 
-                        Invoke-RestMethod `
-                            -Uri "$env:OLLAMA_URL/api/pull" `
-                            -Method Post `
-                            -ContentType "application/json" `
-                            -Body $pullBody `
-                            -TimeoutSec 1800 |
-                            Out-Null
+                            $pullBody = @{
+                                model = $requiredModel
+                                stream = $false
+                            } | ConvertTo-Json -Depth 5
+
+                            Invoke-RestMethod `
+                                -Uri "$env:OLLAMA_URL/api/pull" `
+                                -Method Post `
+                                -ContentType "application/json" `
+                                -Body $pullBody `
+                                -TimeoutSec 1800 |
+                                Out-Null
+                        }
                     }
 
                     $verificationResponse = Invoke-RestMethod `
@@ -284,50 +288,56 @@ Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
                             }
                     )
 
-                    if ($verifiedModels -notcontains $env:OLLAMA_MODEL) {
-                        throw "Configured model $env:OLLAMA_MODEL is not available."
+                    foreach ($requiredModel in $requiredModels) {
+                        $requiredModel = $requiredModel.Trim()
+                        if ($verifiedModels -notcontains $requiredModel) {
+                            throw "Configured model $requiredModel is not available."
+                        }
+                        Write-Host "Configured model is available: $requiredModel"
                     }
-
-                    Write-Host "Configured model is available: $env:OLLAMA_MODEL"
                 '''
             }
         }
 
-        stage('Warm Up Ollama Model') {
+        stage('Warm Up Ollama Models') {
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
 
-                    Write-Host "Warming up model $env:OLLAMA_MODEL..."
+                    $requiredModels = $env:OLLAMA_MODELS -split ","
 
-                    $requestBody = @{
-                        model = $env:OLLAMA_MODEL
-                        messages = @(
-                            @{
-                                role = "user"
-                                content = "Reply only with OK."
+                    foreach ($requiredModel in $requiredModels) {
+                        $requiredModel = $requiredModel.Trim()
+                        Write-Host "Warming up model $requiredModel..."
+
+                        $requestBody = @{
+                            model = $requiredModel
+                            messages = @(
+                                @{
+                                    role = "user"
+                                    content = "Reply only with OK."
+                                }
+                            )
+                            stream = $false
+                            keep_alive = "10m"
+                            options = @{
+                                temperature = 0
                             }
-                        )
-                        stream = $false
-                        keep_alive = "10m"
-                        options = @{
-                            temperature = 0
+                        } | ConvertTo-Json -Depth 10
+
+                        $response = Invoke-RestMethod `
+                            -Uri "$env:OLLAMA_URL/api/chat" `
+                            -Method Post `
+                            -ContentType "application/json" `
+                            -Body $requestBody `
+                            -TimeoutSec ([int]$env:OLLAMA_TIMEOUT_SECONDS)
+
+                        if (-not $response.message) {
+                            throw "Ollama warm-up request failed for $requiredModel."
                         }
-                    } | ConvertTo-Json -Depth 10
 
-                    $response = Invoke-RestMethod `
-                        -Uri "$env:OLLAMA_URL/api/chat" `
-                        -Method Post `
-                        -ContentType "application/json" `
-                        -Body $requestBody `
-                        -TimeoutSec ([int]$env:OLLAMA_TIMEOUT_SECONDS)
-
-                    if (-not $response.message) {
-                        throw "Ollama warm-up request failed."
+                        Write-Host "Model $requiredModel is ready. Response: $($response.message.content)"
                     }
-
-                    Write-Host "Ollama model is ready."
-                    Write-Host "Model response: $($response.message.content)"
                 '''
             }
         }
@@ -340,7 +350,7 @@ Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
                     set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
                     set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
                     set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
-                    set "PYTHONPATH=%WORKSPACE%\\libs\\common\\src;%WORKSPACE%\\services\\gateway\\src;%WORKSPACE%\\services\\repository_storage_service\\src;%WORKSPACE%\\services\\repository_scanner_service\\src"
+                    set "PYTHONPATH=%WORKSPACE%\\libs\\common\\src;%WORKSPACE%\\libs\\events\\src;%WORKSPACE%\\services\\gateway\\src;%WORKSPACE%\\services\\repository_storage_service\\src;%WORKSPACE%\\services\\repository_scanner_service\\src;%WORKSPACE%\\services\\llm_service\\src;%WORKSPACE%\\services\\security_intelligence_service\\src;%WORKSPACE%\\services\\mcp-server\\src;%WORKSPACE%\\services\\registry_service\\src"
 
                     if exist test-results.xml (
                         del /q test-results.xml
@@ -349,8 +359,8 @@ Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
                     echo Python path:
                     echo %PYTHONPATH%
 
-                    echo Running tests with Ollama model:
-                    echo %OLLAMA_MODEL%
+                    echo Running tests with Ollama models:
+                    echo %OLLAMA_MODELS%
 
                     "%UV_EXE%" run --no-sync pytest -v --junitxml=test-results.xml
 
@@ -369,12 +379,18 @@ Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
                 }
             }
         }
+
+        stage('Build Docker Images') {
+            steps {
+                bat 'docker-compose build'
+            }
+        }
     }
 
     post {
         success {
             echo 'Dependency Sentinel pipeline completed successfully.'
-            echo 'Ollama model: qwen2.5-coder:1.5b'
+            echo 'Ollama models verified: qwen2.5-coder:1.5b, qwen3:8b'
         }
 
         failure {

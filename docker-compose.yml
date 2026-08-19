@@ -1,3 +1,15 @@
+x-common-env: &common-env
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  BIND_HOST: 0.0.0.0
+  SCHEDULER_HOST: scheduler
+  GATEWAY_HOST: gateway
+  REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
+  REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
+  LLM_SERVICE_HOST: llm-service
+  REGISTRY_SERVICE_HOST: registry-service
+  MCP_SERVER_HOST: mcp-server
+  SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+
 services:
   kafka:
     image: confluentinc/cp-kafka:7.8.3
@@ -39,6 +51,128 @@ services:
       - "8081:8080"
     networks:
       - dependency-network
+
+  scheduler:
+    build: .
+    container_name: scheduler
+    command: ["scheduler", "scheduler"]
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    networks:
+      - dependency-network
+    depends_on:
+      - kafka
+
+  gateway:
+    build: .
+    container_name: gateway
+    command: ["gateway", "gateway"]
+    ports:
+      - "8001:8001"
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    networks:
+      - dependency-network
+    depends_on:
+      - scheduler
+
+  repository-storage-service:
+    build: .
+    container_name: repository-storage-service
+    command: ["repository-storage-service", "repository-storage-service"]
+    ports:
+      - "8002:8002"
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    networks:
+      - dependency-network
+    depends_on:
+      - kafka
+
+  repository-scanner-service:
+    build: .
+    container_name: repository-scanner-service
+    command: ["repository-scanner-service", "repository-scanner-service"]
+    ports:
+      - "8003:8003"
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    networks:
+      - dependency-network
+    depends_on:
+      - kafka
+
+  llm-service:
+    build: .
+    container_name: llm-service
+    command: ["llm-service", "llm-service"]
+    ports:
+      - "8004:8004"
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    networks:
+      - dependency-network
+    depends_on:
+      - mcp-server
+      - kafka
+
+  registry-service:
+    build: .
+    container_name: registry-service
+    command: ["registry-service", "registry-service"]
+    ports:
+      - "8008:8005"
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    networks:
+      - dependency-network
+    depends_on:
+      - kafka
+
+  mcp-server:
+    build: .
+    container_name: mcp-server
+    command: ["mcp-server", "mcp-server"]
+    ports:
+      - "8006:8006"
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    networks:
+      - dependency-network
+    depends_on:
+      - kafka
+
+  security-intelligence-service:
+    build: .
+    container_name: security-intelligence-service
+    command: ["security-intelligence-service", "security-intelligence-service"]
+    ports:
+      - "8007:8007"
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    networks:
+      - dependency-network
+    depends_on:
+      - llm-service
+      - kafka
 
 volumes:
   kafka_data:
