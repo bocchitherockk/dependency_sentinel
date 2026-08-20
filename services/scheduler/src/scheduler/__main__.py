@@ -1,4 +1,9 @@
-from .main import main
+from scheduler.main import main as scheduler_main
+from common.logging.global_logger import get_global_logger
 
-if __name__ == '__main__':
-    main()
+logger = get_global_logger(__name__)
+
+def main():
+    logger.info('Starting the Scheduler service...')
+    scheduler_main()
+

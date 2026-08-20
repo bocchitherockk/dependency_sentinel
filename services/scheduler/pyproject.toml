@@ -20,7 +20,7 @@ common = { workspace = true }
 events = { workspace = true }
 
 [project.scripts]
-scheduler = "scheduler.main:main"
+scheduler = "scheduler.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/scheduler"]
