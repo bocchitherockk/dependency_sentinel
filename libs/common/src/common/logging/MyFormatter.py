@@ -20,15 +20,14 @@ class MyFormatter(logging.Formatter):
     }
     
     def __init__(self, fmt, module_name: str, colorize: bool = True):
+        fmt = fmt.replace("{module_name}", module_name)
         self.module_name: str = module_name
         self.colorize: bool = colorize
         super().__init__(fmt)
 
     def format(self, record):
         if not self.colorize:
-            result = super().format(record)
-            result = result.format(module_name=self.module_name)
-            return result
+            return super().format(record)
 
         else:
             # Fetch the color code corresponding to the log level
@@ -38,7 +37,6 @@ class MyFormatter(logging.Formatter):
             record.levelname = f'{color_code}{orig_levelname}{self.RESET}'
             # Call the original formatter logic
             result = super().format(record)
-            result = result.format(module_name=self.module_name)
             # Restore the original levelname so downstream handlers (like file logs) stay clean
             record.levelname = orig_levelname
             return result

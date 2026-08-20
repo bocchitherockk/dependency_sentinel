@@ -1,3 +1,4 @@
+from logging import Logger
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -6,10 +7,16 @@ from git import Repo
 from github import Github
 from dotenv import load_dotenv
 
+from common.logging.global_logger import get_global_logger
 from common.schemas.Directory import Directory
 from common.schemas.File import File
 
+logger: Logger = get_global_logger(__name__)
+
 load_dotenv()
+logger.info('Environment variables loaded from .env file.')
+logger.debug('Environment variables: ')
+logger.debug(f'GITHUB_PERSONAL_ACCESS_TOKEN: {os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")}')
 
 IGNORED_DIRECTORIES: list[str] = ['.git', '.venv', 'node_modules', 'target', '__pycache__', '.pytest_cache']
 
@@ -69,6 +76,7 @@ def clone_repository(repository_url: str, destination: Path) -> str:
     if not destination.exists():
         repo: Repo = Repo.clone_from(repository_url, destination)
         default_branch = repo.active_branch.name
+        logger.info(f"Repository cloned successfully from '{repository_url}' to '{destination}'. Default branch: {default_branch}")
     else:
         # Pull the latest changes if the repository already exists
         # Hard reset and clean to ensure the local repository state exactly matches the remote state
@@ -78,21 +86,26 @@ def clone_repository(repository_url: str, destination: Path) -> str:
         default_branch = repo.git.symbolic_ref('refs/remotes/origin/HEAD').split('/')[-1]
         repo.git.reset('--hard', f'origin/{default_branch}')
         repo.git.clean('-fd')
+        logger.info(f"Repository at '{destination}' updated successfully. Default branch: {default_branch}")
         
     return default_branch  # Return the default branch name for further use (e.g., creating a pull request)
 
 def create_branch(repository_path: Path, branch_name: str) -> None:
     if not repository_path.exists():
+        logger.error(f"The repository path '{repository_path}' does not exist.")
         raise FileNotFoundError(f"The repository path '{repository_path}' does not exist.")
 
     if not branch_name:
+        logger.error("Branch name must be a non-empty string.")
         raise ValueError('Branch name must be a non-empty string.')
 
     repo = Repo(repository_path)
     repo.git.checkout('HEAD', b=branch_name)
+    logger.info(f"Branch '{branch_name}' created successfully in repository at '{repository_path}'.")
 
 def commit_and_push_changes(repository_path: Path) -> None:
     if not repository_path.exists():
+        logger.error(f"The repository path '{repository_path}' does not exist.")
         raise FileNotFoundError(f"The repository path '{repository_path}' does not exist.")
 
     repo = Repo(repository_path)
@@ -100,8 +113,15 @@ def commit_and_push_changes(repository_path: Path) -> None:
     repo.index.commit('Update manifest files')
     current_branch = repo.active_branch.name
     repo.git.push('-u', 'origin', current_branch)
+    logger.info(f"Changes committed and pushed for repository at '{repository_path}' on branch '{current_branch}'.")
 
-def create_pull_request(repository_name: str, repository_owner_name: str, branch_name: str, body: str) -> None:
+def create_pull_request(
+    repository_name: str,
+    repository_owner_name: str,
+    default_branch: str,
+    branch_name: str,
+    body: str
+) -> None:
     github_access_token: str = os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')
     g = Github(github_access_token)
 
@@ -109,7 +129,9 @@ def create_pull_request(repository_name: str, repository_owner_name: str, branch
 
     pull_request = repo.create_pull(
         title='Dependency Sentinel auto update dependencies',
+        base=default_branch,
         head=branch_name,
         body=body,
-        base='main',
     )
+    logger.info(f"Pull request created for repository '{repository_name}' on branch '{branch_name}'.")
+    logger.debug(f"Pull request URL: {pull_request.html_url}")

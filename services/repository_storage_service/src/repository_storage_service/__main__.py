@@ -1,4 +1,8 @@
-from .main import main
+from common.logging.global_logger import get_global_logger
+logger = get_global_logger(__name__)
+logger.info('Starting the Repository Storage Service...')
 
-if __name__ == "__main__":
-    main()
+from repository_storage_service.main import main as repository_storage_service_main
+
+def main():
+    repository_storage_service_main()
