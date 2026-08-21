@@ -1,7 +1,7 @@
-import asyncio
 import json
 import os
 from typing import Any, override
+from logging import Logger
 
 from dotenv import load_dotenv
 import fastmcp
@@ -9,15 +9,23 @@ from fastmcp.client.client import CallToolResult
 from google.genai import Client
 from google.genai import types
 
-load_dotenv()
-
+from common.logging.global_logger import get_global_logger
 from llm_service.llm_clients.llm_client import LLMClient
+
+logger: Logger = get_global_logger(__name__)
+
+load_dotenv()
+logger.info('Environment variables loaded from .env file.')
+logger.debug('Environment variables: ')
+logger.debug(f'    GEMINI_API_KEY: {os.getenv("GEMINI_API_KEY")}')
+
 
 class GeminiClient(LLMClient):
     def __init__(self, model_name: str):
         self.model_name = model_name
         api_key = os.getenv('GEMINI_API_KEY') or 'dummy_key_for_tests'
         self.client: Client = Client(api_key=api_key)
+        logger.info(f'GeminiClient initialized with model: {self.model_name}')
 
     @override
     async def chat(
@@ -34,6 +42,8 @@ class GeminiClient(LLMClient):
 
         if mcp_client is not None:
             tools_list = await mcp_client.list_tools()
+            logger.info(f'LLM chat request prepared with {len(tools_list)} tools for model: {self.model_name}')
+            logger.debug(f'Tools details: {json.dumps(tools_list, indent=2)}')
 
         contents = [
             types.Content(
@@ -52,14 +62,21 @@ class GeminiClient(LLMClient):
                 config.automatic_function_calling = types.AutomaticFunctionCallingConfig(
                     disable=True,
                 )
+            logger.info(f'LLM chat request sent to {self.model_name}')
+            logger.debug(f'Request contents: {json.dumps([content.to_dict() for content in contents], indent=2)}')
+            logger.debug(f'Request config: {json.dumps(config.to_dict(), indent=2)}')
+
             response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=contents,
                 config=config
             )
+
             candidate: types.Candidate = response.candidates[0]
             model_parts: list[types.Part] = []
             tool_responses_parts: list[types.Part] = []
+            logger.info(f'LLM requested {len([part for part in candidate.content.parts if part.function_call])} tool calls')
+
             for part in candidate.content.parts:
                 if part.text:
                     model_parts.append(types.Part.from_text(text=part.text))
@@ -81,6 +98,8 @@ class GeminiClient(LLMClient):
                     )
 
                     tool_result: CallToolResult = await mcp_client.call_tool(tool_name, tool_args)
+                    logger.info(f"Tool '{tool_name}' called with arguments: {tool_args}")
+                    logger.debug(f"Tool '{tool_name}' result: {tool_result.content[0].text}")
                     tool_responses_parts.append(
                         types.Part.from_function_response(
                             name=tool_name,
@@ -92,9 +111,12 @@ class GeminiClient(LLMClient):
             if tool_responses_parts:
                 contents.append(types.Content(role='user', parts=tool_responses_parts))
             else:
+                logger.info(f'LLM did not request any tool calls for model: {self.model_name}')
                 break
 
         if response_format is None:
+            logger.info(f'LLM chat response received from {self.model_name}')
+            logger.debug(f'Response message: {json.dumps(candidate.to_json_dict(), indent=2)}')
             return response.text
         else:
             contents.append(types.Content(role='user', parts=[types.Part.from_text(text='Respond in a structured format')]))
@@ -108,4 +130,7 @@ class GeminiClient(LLMClient):
                     response_schema=response_format,
                 )
             )
+            logger.info(f'LLM chat response restructured received from {self.model_name}')
+            logger.debug(f'json schema: {json.dumps(response_format, indent=2)}')
+            logger.debug(f'Restructured response content: {response.text}')
             return json.loads(response.text)
