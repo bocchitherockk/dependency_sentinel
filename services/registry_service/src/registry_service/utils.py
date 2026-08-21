@@ -1,13 +1,18 @@
 import asyncio
+from logging import Logger
 
+from common.logging.global_logger import get_global_logger
 from common.schemas.Dependency import Dependency
 from common.schemas.ManifestFile import ManifestFile
 from common.schemas.DependencySecurityReport import DependencySecurityReport
 from common.schemas.DependencyUpdateContext import DependencyUpdateContext
 from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
+
 from registry_service.registry_adapters.base_registry_adapter import BaseRegistryAdapter
 from registry_service.registry_selector import RegistrySelector
 from registry_service.security_registry import SecurityRegistry
+
+logger: Logger = get_global_logger(__name__)
 
 async def get_candidate_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency]:
     registry_adapter: BaseRegistryAdapter = RegistrySelector.get_adapter(dependency.registry_name)
@@ -30,11 +35,14 @@ async def get_dependency_update_context(dependency: Dependency) -> DependencyUpd
         get_dependency_security_report(latest_compatible_version_dependency),
         get_dependency_security_report(latest_version_dependency)
     )
-    return DependencyUpdateContext(
+    result: DependencyUpdateContext = DependencyUpdateContext(
         current_version_dependency_report=current_version_dependency_report,
         latest_compatible_version_dependency_report=latest_compatible_version_dependency_report,
         latest_version_dependency_report=latest_version_dependency_report,
     )
+    logger.info(f"DependencyUpdateContext generated for dependency '{dependency.name}' with current version '{dependency.version}' in registry '{dependency.registry_name}'.")
+    logger.debug(f'DependencyUpdateContext details: {result}')
+    return result
 
 async def get_manifest_file_update_context(manifest_file: ManifestFile) -> ManifestFileUpdateContext:
     dependencies_update_context, dev_dependencies_update_context = await asyncio.gather(
@@ -49,8 +57,11 @@ async def get_manifest_file_update_context(manifest_file: ManifestFile) -> Manif
             if dependency.registry_name is not None
         ])
     )
-    return ManifestFileUpdateContext(
+    result: ManifestFileUpdateContext = ManifestFileUpdateContext(
         manifest_file_path=manifest_file.path,
         dependencies_update_context=dependencies_update_context,
         dev_dependencies_update_context=dev_dependencies_update_context,
     )
+    logger.info(f"ManifestFileUpdateContext generated for manifest file '{manifest_file.path}'.")
+    logger.debug(f'ManifestFileUpdateContext details: {result}')
+    return result
