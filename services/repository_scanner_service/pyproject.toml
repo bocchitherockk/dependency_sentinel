@@ -18,4 +18,4 @@ common = { workspace = true }
 events = { workspace = true }
 
 [project.scripts]
-repository-scanner-service = "repository_scanner_service.main:main"
+repository-scanner-service = "repository_scanner_service.__main__:main"
