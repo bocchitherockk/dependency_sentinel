@@ -24,7 +24,7 @@ common = { workspace = true }
 events = { workspace = true }
 
 [project.scripts]
-security-intelligence-service = "security_intelligence_service.main:main"
+security-intelligence-service = "security_intelligence_service.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/security_intelligence_service"]
