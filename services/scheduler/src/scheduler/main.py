@@ -64,9 +64,7 @@ app = FastAPI(
 
 @app.post('/start-scan')
 async def start_scan_endpoint(start_scan_request: StartScanRequest = Body(...)):
-    logger.info(f'Received request to start scan for repository: {start_scan_request.repository_url}')
     try:
-        logger.info(f'Publishing ScanStartedEvent for {start_scan_request.repository_url}.')
         scan_started_event: ScanStartedEvent = ScanStartedEvent(
             key=start_scan_request.repository_url,
             repository_url=start_scan_request.repository_url,

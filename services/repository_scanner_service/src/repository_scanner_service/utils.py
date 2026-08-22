@@ -96,6 +96,7 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
         tasks = []
         for manifest_file in detected_manifest_files:
             params = { 'model_name': 'qwen2.5-coder:1.5b' }
+            # params = { 'model_name': 'qwen3:8b' }
             body = manifest_file.model_dump(mode='json')
             logger.info(f"Extracting dependencies from manifest file '{manifest_file.path}' (model = {params['model_name']}).")
             logger.debug(f'Manifest file: {body}')
@@ -110,9 +111,13 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
     result: list[ManifestFile] = []
     for response in responses:
         response.raise_for_status()
-        result.append(ManifestFile(**response.json()))
+        manifest_file_payload = response.json()
+        if manifest_file_payload is None:
+            logger.warning(f"LLM Service returned None for a manifest file. This may indicate an error in dependency extraction.")
+            continue
+        result.append(ManifestFile(**manifest_file_payload))
     logger.info(f'Extracted dependencies from {len(result)} manifest files.')
-    logger.debug(f'Extracted manifest files: {[manifest_file.path for manifest_file in result]}')
+    logger.debug(f'Extracted dependencies: {result}')
     return result
     ################## HACK #####################
     ################## Extract dependencies from only 1 manifest file and then short return #####################

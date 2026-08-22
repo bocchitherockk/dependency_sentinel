@@ -86,9 +86,11 @@ class OllamaClient(LLMClient):
                     f'{self.models[self.model_name]['endpoint']}/api/chat',
                     json=body,
                 )
+                logger.info(f'LLM chat response received from {self.model_name}')
 
             response.raise_for_status()
             data = response.json()
+            logger.debug(f'Response data: {json.dumps(data, indent=2)}')
             message = data['message']
             tool_calls = message.get('tool_calls', None)
 
@@ -126,16 +128,19 @@ class OllamaClient(LLMClient):
                 'content': 'Respond in a strctured format'
             })
             async with httpx.AsyncClient(timeout=None) as client:
+                logger.info(f'LLM restructure request sent to {self.model_name}')
+                logger.debug(f'Request body: {json.dumps(body, indent=2)}')
                 response = await client.post(
                     f'{self.models[self.model_name]['endpoint']}/api/chat',
                     json=body,
                 )
+                logger.info(f'LLM restructure response received from {self.model_name}')
+                logger.debug(f'Response data: {json.dumps(data, indent=2)}')
 
             response.raise_for_status()
             data = response.json()
             message = data['message']
             content = message['content']
-            logger.info(f'LLM chat response restructured received from {self.model_name}')
             logger.debug(f'json schema: {json.dumps(response_format, indent=2)}')
             logger.debug(f'Restructured response content: {content}')
             return json.loads(content)

@@ -54,14 +54,15 @@ class LLMClient(ABC):
                     break
             if not found:
                 logger.error(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
-                raise ValueError(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
-                # print(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
+                # We will not raise an error here to avoid failing the entire process due to a single unexpected file path.
+                # Instead, we log the error, we don't include the file in the result, and continue processing the remaining files.
+                # raise ValueError(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
 
         logger.info(f'LLM detected {len(result)} manifest files out of {len(files)} total files.')
         logger.debug(f'LLM detected manifest files: {[str(file.path) for file in result]}')
         return result
 
-    async def extract_dependencies(self, manifest_file: File) -> ManifestFile:
+    async def extract_dependencies(self, manifest_file: File) -> ManifestFile | None:
         async with httpx.AsyncClient(timeout=None) as client:
             response = await client.get(f"{services['registry-service']['endpoint']}/supported-registries")
         response.raise_for_status()
@@ -84,6 +85,18 @@ class LLMClient(ABC):
             response_format=ManifestFile.model_json_schema(),
         )
         result: ManifestFile = ManifestFile(**chat_result)
+
+        print(result.path)
+        print(type(result.path))
+        print(manifest_file.path)
+        print(type(manifest_file.path))
+        print(result.path == str(manifest_file.path))
+
+        if result.path != str(manifest_file.path):
+            logger.error(f"Manifest file path '{result.path}' returned by the LLM does not match the provided manifest file path '{manifest_file.path}'.")
+            # raise ValueError(f"Manifest file path '{result.path}' returned by the LLM does not match the provided manifest file path '{manifest_file.path}'.")
+            return None
+
         logger.info(f'LLM extracted dependencies for manifest file: {manifest_file.path}')
         logger.debug(f'Extracted dependencies: {result}')
         return result
@@ -104,7 +117,7 @@ class LLMClient(ABC):
             response_format=DependencyUpdatePlan.model_json_schema(),
         )
         result: DependencyUpdatePlan = DependencyUpdatePlan(**chat_result)
-        logger.info(f'LLM generated update plan for dependency: {dependency_update_context.dependency_name}')
+        logger.info(f'LLM generated update plan for dependency: {dependency_update_context.current_version_dependency_report.name}')
         logger.debug(f'Generated update plan: {result}')
         return result
 

@@ -99,7 +99,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
     @override
     @staticmethod
-    async def get_latest_compatible_version_dependency(dependency: Dependency) -> Dependency:
+    async def get_latest_compatible_version_dependency(dependency: Dependency) -> Dependency | None:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
         corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
@@ -111,12 +111,25 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         response.raise_for_status()
         data = response.json()
 
-        # TODO: this is a quick workaround to get the exact version
-        current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
+        try:
+            # TODO: this is a quick workaround to get the exact version
+            current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
+        except ValueError:
+            # In this case, we return None.
+            logger.error(f"Invalid Semver for current version '{dependency.version}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+            return None
+
         # Search for the latest compatible version in the versions list
         # We iterate in reverse because the result is likely to be towards the end of the list
         for i in range(len(data['versions']) - 1, -1, -1):
-            iter_version = semver.VersionInfo.parse(data['versions'][i]['number'])
+            try:
+                iter_version = semver.VersionInfo.parse(data['versions'][i]['number'])
+            except ValueError:
+                # Sometimes, the version includes some invalid characters that are not compatible with Semver.
+                # In this case, we skip this version and continue to the next one in hope of finding a valid one.
+                logger.warning(f"Skipping invalid version '{data['versions'][i]['number']}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+                continue
+
             if iter_version.major == current_version.major:
                 latest_compatible_version_dependency: Dependency = Dependency(
                     name=dependency.name,
@@ -128,11 +141,13 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
             logger.debug(f"Version '{data['versions'][i]['number']}' is not compatible with current version '{dependency.version}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
 
         logger.error(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
-        raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{dependency.registry_name}'.")
+        # raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
+        return None
+
 
     @override
     @staticmethod
-    async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency]:
+    async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency] | None:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
         corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
@@ -143,8 +158,9 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
         response.raise_for_status()
         data = response.json()
-        latest_stable_release_number: str = data['latest_stable_release_number']
 
+        latest_stable_release_number: str = data['latest_stable_release_number']
+        latest_compatible_version_dependency: Dependency | None = None
         latest_version_dependency: Dependency = Dependency(
             name=dependency.name,
             version=latest_stable_release_number,
@@ -152,13 +168,20 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         )
         logger.info(f"Latest version for dependency '{dependency.name}' fetched in registry '{corrected_registry_name}' is '{latest_stable_release_number}'.")
 
-        latest_compatible_version_dependency: Dependency | None = None
-
-        current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
+        try:
+            # TODO: this is a quick workaround to get the exact version
+            current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
+        except ValueError:
+            # In this case, we return None.
+            logger.error(f"Invalid Semver for current version '{dependency.version}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+            return None
+        
         for i in range(len(data['versions']) - 1, -1, -1):
             try:
                 iter_version = semver.VersionInfo.parse(data['versions'][i]['number'])
             except ValueError:
+                # Sometimes, the version includes some invalid characters that are not compatible with Semver.
+                # In this case, we skip this version and continue to the next one in hope of finding a valid one.
                 logger.warning(f"Skipping invalid version '{data['versions'][i]['number']}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
                 continue
 
@@ -169,20 +192,17 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
                     registry_name=dependency.registry_name,
                 )
                 logger.info(f"Latest compatible version for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}' is '{latest_compatible_version_dependency.version}'.")
-                break
-        # TODO: Sometimes this throws an error because `latest_compatible_version_dependency` is not defined/assigned.
-        # The root reason for that is the LLM is hullicinating and providing a version that does not even exist in the registry.
-        # We need to handle this case.
-        # Maybe make the latest_compatible_version_dependency optional
-        #   Or
-        # Set the latest_compatible_version_dependency to the current version
-        
-        # !!!! BUT
-        # Keep in mind that if there is no compatible version, it means even the current version does not exist in the registry.
-        # So the best absolute solution is to ignore this dependency altogether and not provide any update plan for it.
+                return latest_compatible_version_dependency, latest_version_dependency
+            logger.debug(f"Version '{data['versions'][i]['number']}' is not compatible with current version '{dependency.version}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
 
-        if latest_compatible_version_dependency is None:
-            logger.error(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
-            raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
+        # TODO: Sometimes we can't find a latest compatible version with the current version in the data['versions'].
+        # Which is weird because at least the current version should be in the list of versions and act as the latest compatible version.
+        # The root reason for that is the LLM is providing a wrong current version from the one in the manifest file, or the manifest file doesn't even have a version and the LLM is providing a version from it's knowledge.
+        # And that version does not even exist in the registry.
 
-        return latest_compatible_version_dependency, latest_version_dependency
+        # The solution for now is return None for the latest compatible version dependency and handle that case in the caller function.
+        # When we return None for the latest compatible version dependency, it means that the current version provided by the LLM is incorrect.
+        # So the entire update context for this dependency is invalid and we should not provide any update plan for it.
+
+        logger.error(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
+        # raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")

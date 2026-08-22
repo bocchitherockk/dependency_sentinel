@@ -43,7 +43,7 @@ class GeminiClient(LLMClient):
         if mcp_client is not None:
             tools_list = await mcp_client.list_tools()
             logger.info(f'LLM chat request prepared with {len(tools_list)} tools for model: {self.model_name}')
-            logger.debug(f'Tools details: {json.dumps(tools_list, indent=2)}')
+            logger.debug(f'Tools details: {json.dumps([tool.model_dump(mode="json") for tool in tools_list], indent=2)}')
 
         contents = [
             types.Content(
@@ -63,14 +63,16 @@ class GeminiClient(LLMClient):
                     disable=True,
                 )
             logger.info(f'LLM chat request sent to {self.model_name}')
-            logger.debug(f'Request contents: {json.dumps([content.to_dict() for content in contents], indent=2)}')
-            logger.debug(f'Request config: {json.dumps(config.to_dict(), indent=2)}')
+            logger.debug(f'Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
+            logger.debug(f'Request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
 
             response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=contents,
                 config=config
             )
+            logger.info(f'LLM chat response received from {self.model_name}')
+            logger.debug(f'Response data: {json.dumps(response.model_dump(mode="json"), indent=2)}')
 
             candidate: types.Candidate = response.candidates[0]
             model_parts: list[types.Part] = []
@@ -116,10 +118,13 @@ class GeminiClient(LLMClient):
 
         if response_format is None:
             logger.info(f'LLM chat response received from {self.model_name}')
-            logger.debug(f'Response message: {json.dumps(candidate.to_json_dict(), indent=2)}')
+            logger.debug(f'Response message: {json.dumps(candidate.model_dump(mode="json"), indent=2)}')
             return response.text
         else:
             contents.append(types.Content(role='user', parts=[types.Part.from_text(text='Respond in a structured format')]))
+            logger.info(f'LLM chat response restructured request sent to {self.model_name}')
+            logger.debug(f'Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
+            logger.debug(f'json schema: {json.dumps(response_format, indent=2)}')
             response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=contents,
@@ -131,6 +136,8 @@ class GeminiClient(LLMClient):
                 )
             )
             logger.info(f'LLM chat response restructured received from {self.model_name}')
+            logger.debug(f'Response data: {json.dumps(response.model_dump(mode="json"), indent=2)}')
+
             logger.debug(f'json schema: {json.dumps(response_format, indent=2)}')
             logger.debug(f'Restructured response content: {response.text}')
             return json.loads(response.text)
