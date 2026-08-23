@@ -1,42 +1,23 @@
+import os
+
+def get_service_config(service_name: str, default_port: int):
+    bind_host = os.getenv("BIND_HOST", "127.0.0.1")
+    env_var_name = f"{service_name.upper().replace('-', '_')}_HOST"
+    endpoint_host = os.getenv(env_var_name, "127.0.0.1")
+    
+    return {
+        'host': bind_host,
+        'port': default_port,
+        'endpoint': f"http://{endpoint_host}:{default_port}"
+    }
+
 services = {
-    'scheduler': {
-        'host': '127.0.0.1',
-        'port': 8000,
-        'endpoint': 'http://127.0.0.1:8000'
-    },
-    'gateway': {
-        'host': '127.0.0.1',
-        'port': 8001,
-        'endpoint': 'http://127.0.0.1:8001'
-    },
-    'repository-storage-service': {
-        'host': '127.0.0.1',
-        'port': 8002,
-        'endpoint': 'http://127.0.0.1:8002'
-    },
-    'repository-scanner-service': {
-        'host': '127.0.0.1',
-        'port': 8003,
-        'endpoint': 'http://127.0.0.1:8003'
-    },
-    'llm-service': {
-        'host': '127.0.0.1',
-        'port': 8004,
-        'endpoint': 'http://127.0.0.1:8004'
-    },
-    'registry-service': {
-        'host': '127.0.0.1',
-        'port': 8005,
-        'endpoint': 'http://127.0.0.1:8005'
-    },
-    'mcp-server': {
-        'host': '127.0.0.1',
-        'port': 8006,
-        'endpoint': 'http://127.0.0.1:8006'
-    },
-    'security-intelligence-service': {
-        'host': '127.0.0.1',
-        'port': 8007,
-        'endpoint': 'http://127.0.0.1:8007'
-    },
+    'scheduler': get_service_config('scheduler', 8000),
+    'gateway': get_service_config('gateway', 8001),
+    'repository-storage-service': get_service_config('repository-storage-service', 8002),
+    'repository-scanner-service': get_service_config('repository-scanner-service', 8003),
+    'llm-service': get_service_config('llm-service', 8004),
+    'registry-service': get_service_config('registry-service', 8005),
+    'mcp-server': get_service_config('mcp-server', 8006),
+    'security-intelligence-service': get_service_config('security-intelligence-service', 8007),
 }

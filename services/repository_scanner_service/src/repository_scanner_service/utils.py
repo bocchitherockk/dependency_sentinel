@@ -33,9 +33,8 @@ async def _detect_manifest_files(flattened_repository_files: list[File]) -> list
         # because for example 2000 files / 20 = 100 concurrent requests.
         tasks = [
             client.post(
-                f'{services['llm-service']['endpoint']}/detect-manifests',
-                params= {'model_name': 'qwen3:8b'},
-                # params= {'model_name': 'qwen2.5-coder:1.5b'},
+                f'{services["llm-service"]["endpoint"]}/detect-manifests',
+                params= {'model_name': 'qwen2.5-coder:1.5b'},
                 json=[flattened_repository_file.model_dump(mode='json') for flattened_repository_file in flattened_repository_files[batch_index : (batch_index + BATCH_SIZE)]],
             )
             for batch_index in range(0, len(flattened_repository_files), BATCH_SIZE)

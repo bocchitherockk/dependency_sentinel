@@ -86,4 +86,4 @@ class EventConsumer:
             except Exception as e:
                 # 4d. En cas d'erreur
                 logger.error(f" Error processing message: {e}")
-                raise
+                # Removed 'raise' to prevent silent crash of consumer task

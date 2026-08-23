@@ -15,16 +15,20 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     base_url: str = 'https://libraries.io/api'
     api_key:  str = os.getenv('LIBRARIES_IO_API_KEY', None)
 
+    import threading
+    _supported_registries_lock = threading.Lock()
+
     @override
     @staticmethod
     def get_supported_registries() -> list[str]:
-        if LibrariesIORegistryAdapter._supported_registries is None:
-            url: str = f'{LibrariesIORegistryAdapter.base_url}/platforms'
-            params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
-            response = httpx.get(url, params=params, timeout=None)
-            response.raise_for_status()
-            data = response.json()
-            LibrariesIORegistryAdapter._supported_registries = [platform['name'] for platform in data]
+        with LibrariesIORegistryAdapter._supported_registries_lock:
+            if LibrariesIORegistryAdapter._supported_registries is None:
+                url: str = f'{LibrariesIORegistryAdapter.base_url}/platforms'
+                params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
+                response = httpx.get(url, params=params, timeout=None)
+                response.raise_for_status()
+                data = response.json()
+                LibrariesIORegistryAdapter._supported_registries = [platform['name'] for platform in data]
 
         return LibrariesIORegistryAdapter._supported_registries
 
@@ -34,7 +38,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         for supported_registry in LibrariesIORegistryAdapter.get_supported_registries():
             if supported_registry.lower() == registry_name.lower():
                 return supported_registry
-        raise ValueError(f"Registry '{registry_name}' is not supported by Libraries.io. Supported registries: {LibrariesIORegistryAdapter.supported_registries}")
+        raise ValueError(f"Registry '{registry_name}' is not supported by Libraries.io. Supported registries: {LibrariesIORegistryAdapter.get_supported_registries()}")
 
     @override
     @staticmethod
