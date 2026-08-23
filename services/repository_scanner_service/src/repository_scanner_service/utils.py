@@ -34,7 +34,7 @@ async def _detect_manifest_files(flattened_repository_files: list[File]) -> list
         tasks = [
             client.post(
                 f'{services["llm-service"]["endpoint"]}/detect-manifests',
-                params= {'model_name': 'qwen2.5-coder:1.5b'},
+                params= {'model_name': 'qwen3:8b'},
                 json=[flattened_repository_file.model_dump(mode='json') for flattened_repository_file in flattened_repository_files[batch_index : (batch_index + BATCH_SIZE)]],
             )
             for batch_index in range(0, len(flattened_repository_files), BATCH_SIZE)
@@ -82,8 +82,8 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
     async with httpx.AsyncClient(timeout=None) as client:
         tasks = [
             client.post(
-                f'{services['llm-service']['endpoint']}/extract-dependencies',
-                params= {'model_name': 'qwen2.5-coder:1.5b'},
+                f'{services["llm-service"]["endpoint"]}/extract-dependencies',
+                params= {'model_name': 'qwen3:8b'},
                 # params= {'model_name': 'qwen3:8b'},
                 # params= {'model_name': 'gemini-3.5-flash-lite'},
                 json=manifest_file.model_dump(mode='json'),
