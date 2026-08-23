@@ -86,7 +86,7 @@ async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpd
     async with httpx.AsyncClient(timeout=None) as client:
         response = await client.post(
             f"{services['llm-service']['endpoint']}/update-manifest",
-            params={ 'model_name': 'gemini-3.5-flash-lite' },
+            params={ 'model_name': 'qwen2.5-coder:1.5b' },
             json=update_manifest_request.model_dump(mode='json'),
         )
     response.raise_for_status()

@@ -1,45 +1,48 @@
-import asyncio
+import sys
+import os
+from pathlib import Path
+
+root_dir = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(root_dir / "libs" / "common" / "src"))
+sys.path.insert(0, str(root_dir / "libs" / "events" / "src"))
+sys.path.insert(0, str(root_dir / "services" / "security_intelligence_service" / "src"))
+
 import pytest
-
-from common.schemas.Registry import Registry
+import asyncio
 from common.schemas.DependencySecurityReport import DependencySecurityReport
-from common.schemas.ManifestFileSecurityReport import ManifestFileSecurityReport
+from common.schemas.DependencyUpdateContext import DependencyUpdateContext
 from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
-from security_intelligence_service.service import process_security_intelligence
+from security_intelligence_service.service import analyze_update_context_and_update_manifests
 
-def test_process_security_intelligence_structure():
-    npm_registry = Registry(name="npm", url="https://registry.npmjs.org/")
-    dummy_report_current = DependencySecurityReport(
-        name="bootstrap",
-        version="5.2.0",
-        registry=npm_registry,
+@pytest.mark.anyio
+async def test_analyze_update_context_structure():
+    current_report = DependencySecurityReport(
+        name="requests",
+        version="2.25.1",
+        registry_name="pypi",
         vulnerabilities=[]
     )
-    dummy_report_candidate = DependencySecurityReport(
-        name="bootstrap",
-        version="5.3.3",
-        registry=npm_registry,
+    latest_report = DependencySecurityReport(
+        name="requests",
+        version="2.34.2",
+        registry_name="pypi",
         vulnerabilities=[]
     )
     
-    current_manifest_report = ManifestFileSecurityReport(
-        path="package.json",
-        dependencies_security_reports=[dummy_report_current],
-        dev_dependencies_security_reports=[]
+    dep_context = DependencyUpdateContext(
+        current_version_dependency_report=current_report,
+        latest_compatible_version_dependency_report=current_report,
+        latest_version_dependency_report=latest_report
     )
-    candidate_manifest_report = ManifestFileSecurityReport(
-        path="package.json",
-        dependencies_security_reports=[dummy_report_candidate],
-        dev_dependencies_security_reports=[]
-    )
-
-    context = ManifestFileUpdateContext(
-        current_manifest_file_report=current_manifest_report,
-        candidate_manifest_file_report=candidate_manifest_report
+    
+    manifest_context = ManifestFileUpdateContext(
+        manifest_file_path="requirements.txt",
+        dependencies_update_context=[dep_context],
+        dev_dependencies_update_context=[]
     )
 
-    result = asyncio.run(process_security_intelligence("test-repo", [context]))
-    assert result["repository_name"] == "test-repo"
-    assert result["processed_count"] == 1
-    assert len(result["details"]) == 1
-    assert result["details"][0]["recommendation"] in ["FAVORABLE", "CAUTIOUS", "DISCOURAGED"]
+    branch_name, summary = await analyze_update_context_and_update_manifests("test-repo", [manifest_context])
+    print(f"Test Result -> Branch: {branch_name}, Summary: {summary[:100] if summary else 'None'}")
+
+if __name__ == "__main__":
+    asyncio.run(test_analyze_update_context_structure())

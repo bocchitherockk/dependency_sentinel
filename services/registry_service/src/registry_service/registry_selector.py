@@ -22,4 +22,4 @@ class RegistrySelector:
                     if registry_name == supported_registry.lower():
                         RegistrySelector.registry_adapters_cache[registry_name] = adapter_class
                         return adapter_class
-            raise ValueError(f"No adapter found for registry: {registry_name}. Supported registries: {list(RegistrySelector.registry_adapters.keys())}")
+            raise ValueError(f"No adapter found for registry: {registry_name}. Supported registries: {list(RegistrySelector.registry_adapters_cache.keys())}")

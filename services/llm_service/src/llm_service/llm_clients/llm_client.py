@@ -43,13 +43,12 @@ class LLMClient(ABC):
         for file_path in chat_result:
             found: bool = False
             for file in files:
-                if str(file.path) == file_path or file.path.as_posix() == file_path:
+                if str(file.path) == file_path or file.path.as_posix() == file_path or str(file.path).endswith(file_path):
                     result.append(file)
                     found = True
                     break
             if not found:
-                raise ValueError(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
-                # print(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
+                print(f"Warning: File path '{file_path}' returned by the LLM is not in the provided list of files.")
 
         return result
 

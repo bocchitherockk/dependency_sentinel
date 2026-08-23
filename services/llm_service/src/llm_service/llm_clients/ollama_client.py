@@ -1,5 +1,6 @@
 from typing import Any, override
 import json
+import os
 
 import httpx
 import fastmcp
@@ -69,9 +70,10 @@ class OllamaClient(LLMClient):
             body['tools'] = tools
 
         while True:
+            ollama_url = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
             async with httpx.AsyncClient(timeout=None) as client:
                 response = await client.post(
-                    f'{self.models[self.model_name]['endpoint']}/api/chat',
+                    f'{ollama_url}/api/chat',
                     json=body,
                 )
 
@@ -105,9 +107,10 @@ class OllamaClient(LLMClient):
                 'role': 'user',
                 'content': 'Respond in a strctured format'
             })
+            ollama_url = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
             async with httpx.AsyncClient(timeout=None) as client:
                 response = await client.post(
-                    f'{self.models[self.model_name]['endpoint']}/api/chat',
+                    f'{ollama_url}/api/chat',
                     json=body,
                 )
 
