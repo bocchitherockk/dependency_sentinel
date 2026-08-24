@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import override
 from logging import Logger
@@ -8,6 +9,7 @@ from dotenv import load_dotenv
 
 from common.logging.global_logger import get_global_logger
 from common.schemas.Dependency import Dependency
+from common.rate_limiter.RateLimiter import RateLimiter
 from registry_service.registry_adapters.base_registry_adapter import BaseRegistryAdapter
 
 logger: Logger = get_global_logger(__name__)
@@ -22,9 +24,13 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     _supported_registries: list[str] | None = None
     base_url: str = 'https://libraries.io/api'
     api_key:  str = os.getenv('LIBRARIES_IO_API_KEY', None)
+    # normally this should be 60 requests per minute
+    # but `get_supported_registries()` is not an async function, meaning we can't call `await rate_limiter.acquire()` in it
+    # so we can't use the rate limiter in it.
+    # Therefore, we will use a lower rate limit of 59 requests per minute to avoid hitting the rate limit of 60 requests per minute in edge cases.
+    rate_limiter: RateLimiter = RateLimiter(max_rate=59, time_window=60.0)
 
-    import threading
-    _supported_registries_lock = threading.Lock()
+    _supported_registries_lock = asyncio.Lock()
 
     @override
     @staticmethod
@@ -60,6 +66,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
+        await LibrariesIORegistryAdapter.rate_limiter.acquire()
         async with httpx.AsyncClient(timeout=None) as client:
             response = await client.get(url, params=params)
 
@@ -85,6 +92,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
+        await LibrariesIORegistryAdapter.rate_limiter.acquire()
         async with httpx.AsyncClient(timeout=None) as client:
             response = await client.get(url, params=params)
 
@@ -108,6 +116,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = { 'api_key': LibrariesIORegistryAdapter.api_key } if LibrariesIORegistryAdapter.api_key is not None else {}
 
+        await LibrariesIORegistryAdapter.rate_limiter.acquire()
         async with httpx.AsyncClient(timeout=None) as client:
             response = await client.get(url, params=params)
 
@@ -156,6 +165,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
+        await LibrariesIORegistryAdapter.rate_limiter.acquire()
         async with httpx.AsyncClient(timeout=None) as client:
             response = await client.get(url, params=params)
 
