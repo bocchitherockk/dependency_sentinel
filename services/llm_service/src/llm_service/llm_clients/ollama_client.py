@@ -34,9 +34,10 @@ class OllamaClient(LLMClient):
     }
 
     def __init__(self, model_name: str):
-        if model_name not in self.models:
+        if model_name not in self.models.keys():
             logger.error(f"LLM model '{model_name}' is not supported.")
             raise ValueError(f"LLM model '{model_name}' is not supported.")
+
         self.model_name = model_name
         logger.info(f'OllamaClient initialized with model: {self.model_name}')
 

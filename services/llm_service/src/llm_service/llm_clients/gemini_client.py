@@ -11,6 +11,7 @@ from google.genai import Client
 from google.genai import types
 
 from common.logging.global_logger import get_global_logger
+from common.rate_limiter.RateLimiter import RateLimiter
 from llm_service.llm_clients.llm_client import LLMClient
 
 logger: Logger = get_global_logger(__name__)
@@ -22,7 +23,46 @@ logger.debug(f'    GEMINI_API_KEY: {os.getenv("GEMINI_API_KEY")}')
 
 
 class GeminiClient(LLMClient):
+    models = {
+        'gemini-3.5-flash': {
+            'model_name': 'gemini-3.5-flash',
+            'rate_limit_requests_per_minute': 5,
+            'rate_limit_requests_per_day': 20,
+            'rate_limit_input_tokens_per_minute': 250000,
+            # For now we are only using the requests per minute limit
+            # because the other limits are not being a problem for now.
+            # But later we should implement the other limits as well
+            # but doing so will require a more complex implementation because a single request affects multiple limits (requests per minute, requests per day, input tokens per minute) and we need to handle them all together
+            # and handling them by sequentially acquiring the locks for each limit is not a good idea because it can lead to to partial acquisitions of the locks.
+            'rate_limiter_requests_per_minute': RateLimiter(max_rate=5, time_window=60.0),
+            # 'rate_limiter_requests_per_day': RateLimiter(max_rate=20, time_window=60*60*24),
+            # 'rate_limiter_input_tokens_per_minute': RateLimiter(max_rate=250000, time_window=60.0),
+        },
+        'gemini-3.5-flash-lite': {
+            'model_name': 'gemini-3.5-flash-lite',
+            'rate_limit_requests_per_minute': 15,
+            'rate_limit_requests_per_day': 500,
+            'rate_limit_input_tokens_per_minute': 250000,
+            'rate_limiter_requests_per_minute': RateLimiter(max_rate=15, time_window=60.0),
+            # 'rate_limiter_requests_per_day': RateLimiter(max_rate=500, time_window=60*60*24),
+            # 'rate_limiter_input_tokens_per_minute': RateLimiter(max_rate=250000, time_window=60.0),
+        },
+        'gemini-3.6-flash': {
+            'model_name': 'gemini-3.6-flash',
+            'rate_limit_requests_per_minute': 5,
+            'rate_limit_requests_per_day': 20,
+            'rate_limit_input_tokens_per_minute': 250000,
+            'rate_limiter_requests_per_minute': RateLimiter(max_rate=5, time_window=60.0),
+            # 'rate_limiter_requests_per_day': RateLimiter(max_rate=20, time_window=60*60*24),
+            # 'rate_limiter_input_tokens_per_minute': RateLimiter(max_rate=250000, time_window=60.0),
+        },
+    }
+
     def __init__(self, model_name: str):
+        if model_name not in self.models.keys():
+            logger.error(f"LLM model '{model_name}' is not supported.")
+            raise ValueError(f"LLM model '{model_name}' is not supported.")
+
         self.model_name = model_name
         api_key = os.getenv('GEMINI_API_KEY') or 'dummy_key_for_tests'
         self.client: Client = Client(api_key=api_key)
@@ -53,6 +93,10 @@ class GeminiClient(LLMClient):
         if response_format is not None:
             config.response_mime_type = 'application/json'
             config.response_schema = response_format
+
+        logger.info(f'LLM chat requested a rate limit acquisition for model: {self.model_name}')
+        await self.models[self.model_name]['rate_limiter_requests_per_minute'].acquire(value=1)
+        logger.info(f'LLM chat rate limit acquisition successful for model: {self.model_name}')
 
         logger.info(f'LLM chat request sent to {self.model_name}')
         logger.debug(f'Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
@@ -109,6 +153,11 @@ class GeminiClient(LLMClient):
 
         while True:
             loop_count += 1
+
+            logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Requested a rate limit acquisition')
+            await self.models[self.model_name]['rate_limiter_requests_per_minute'].acquire(value=1)
+            logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Rate limit acquisition successful')
+
             logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request sent')
             logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
             logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
@@ -178,6 +227,10 @@ class GeminiClient(LLMClient):
                 response_mime_type='application/json',
                 response_schema=response_format,
             )
+
+            logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Requested a rate limit acquisition for restructuring')
+            await self.models[self.model_name]['rate_limiter_requests_per_minute'].acquire(value=1)
+            logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Rate limit acquisition successful for restructuring')
 
             logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request sent')
             logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')

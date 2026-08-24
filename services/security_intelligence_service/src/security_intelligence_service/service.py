@@ -100,7 +100,6 @@ async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpd
         manifest_file=manifest_file,
         update_plan=update_plan,
     )
-    await asyncio.sleep(65) # Wait for 65 seconds to avoid rate limiting issues with the LLM service.
     async with httpx.AsyncClient(timeout=None) as client:
         response = await client.post(
             f"{services['llm-service']['endpoint']}/update-manifest",
