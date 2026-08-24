@@ -2,6 +2,7 @@ import json
 import os
 from typing import Any, override
 from logging import Logger
+import uuid
 
 from dotenv import load_dotenv
 import fastmcp
@@ -34,16 +35,56 @@ class GeminiClient(LLMClient):
         response_format: None | dict[str, Any] = None,
         temperature: float = 0.0,
         think: bool = False, # google genai does not support negating thinking, the models will always think
+    ):
+        # TODO: this is a temporary workaround, i need to define a proper abstract interface to unify the different LLM clients on a common interface, and then implement the chat method for each LLM client accordingly.
+        assert messages[0]['role'] == 'system', 'The first message must be a system message.'
+        assert messages[1]['role'] == 'user', 'The second message must be a user message.'
+
+        contents = [
+            types.Content(
+                role='user',
+                parts=[types.Part.from_text(text=messages[1]['content'])]
+            )
+        ]
+        config: types.GenerateContentConfig = types.GenerateContentConfig(
+            system_instruction=messages[0]['content'],
+            temperature=temperature,
+        )
+        if response_format is not None:
+            config.response_mime_type = 'application/json'
+            config.response_schema = response_format
+
+        logger.info(f'LLM chat request sent to {self.model_name}')
+        logger.debug(f'Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
+        logger.debug(f'Request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
+        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=config
+        )
+        logger.info(f'LLM chat response received from {self.model_name}')
+        logger.debug(f'Response data: {json.dumps(response.model_dump(mode="json"), indent=2)}')
+
+        if response_format is None:
+            return response.text
+        else:
+            return json.loads(response.text)
+
+    @override
+    async def agent(
+        self,
+        messages: list[dict[str, Any]],
+        response_format: None | dict[str, Any] = None,
+        temperature: float = 0.0,
+        think: bool = False, # google genai does not support negating thinking, the models will always think
         mcp_client: fastmcp.Client | None = None,
     ):
         # TODO: this is a temporary workaround, i need to define a proper abstract interface to unify the different LLM clients on a common interface, and then implement the chat method for each LLM client accordingly.
         assert messages[0]['role'] == 'system', 'The first message must be a system message.'
         assert messages[1]['role'] == 'user', 'The second message must be a user message.'
 
-        if mcp_client is not None:
-            tools_list = await mcp_client.list_tools()
-            logger.info(f'LLM chat request prepared with {len(tools_list)} tools for model: {self.model_name}')
-            logger.debug(f'Tools details: {json.dumps([tool.model_dump(mode="json") for tool in tools_list], indent=2)}')
+        agent_loop_id: str = uuid.uuid4() # this is just fo logging purposes, however it could be later used to be stored in a database (it has to be better than this tho, maybe a uuid7)
+        loop_count: int = 0 # this is just for logging purposes
 
         contents = [
             types.Content(
@@ -52,32 +93,38 @@ class GeminiClient(LLMClient):
             )
         ]
 
-        while True:
-            config: types.GenerateContentConfig = types.GenerateContentConfig(
-                system_instruction=messages[0]['content'],
-                temperature=temperature,
-            )
-            if mcp_client is not None:
-                config.tools = tools_list
-                config.automatic_function_calling = types.AutomaticFunctionCallingConfig(
-                    disable=True,
-                )
-            logger.info(f'LLM chat request sent to {self.model_name}')
-            logger.debug(f'Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
-            logger.debug(f'Request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
+        config: types.GenerateContentConfig = types.GenerateContentConfig(
+            system_instruction=messages[0]['content'],
+            temperature=temperature,
+        )
+        if mcp_client is not None:
+            tools_list = await mcp_client.list_tools()
+            logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Prepared with tools: {len(tools_list)}')
+            logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Tools details: {json.dumps([tool.model_dump(mode="json") for tool in tools_list], indent=2)}')
 
+            config.tools = tools_list
+            config.automatic_function_calling = types.AutomaticFunctionCallingConfig(
+                disable=True,
+            )
+
+        while True:
+            loop_count += 1
+            logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request sent')
+            logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
+            logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
             response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=contents,
                 config=config
             )
-            logger.info(f'LLM chat response received from {self.model_name}')
-            logger.debug(f'Response data: {json.dumps(response.model_dump(mode="json"), indent=2)}')
+            logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Response received')
+            logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Response: {json.dumps(response.model_dump(mode="json"), indent=2)}')
 
             candidate: types.Candidate = response.candidates[0]
             model_parts: list[types.Part] = []
             tool_responses_parts: list[types.Part] = []
-            logger.info(f'LLM requested {len([part for part in candidate.content.parts if part.function_call])} tool calls')
+            logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Requested tool calls count: {len([part for part in candidate.content.parts if part.function_call])}')
+            logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Requested tool calls: {json.dumps([part.model_dump(mode="json") for part in candidate.content.parts if part.function_call], indent=2)}')
 
             for part in candidate.content.parts:
                 if part.text:
@@ -99,9 +146,12 @@ class GeminiClient(LLMClient):
                         )
                     )
 
+                    logger.info(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Called tool: '{tool_name}'")
+                    logger.debug(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool args: {tool_name} ({tool_args})")
                     tool_result: CallToolResult = await mcp_client.call_tool(tool_name, tool_args)
-                    logger.info(f"Tool '{tool_name}' called with arguments: {tool_args}")
-                    logger.debug(f"Tool '{tool_name}' result: {tool_result.content[0].text}")
+                    logger.info(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool returned: '{tool_name}'")
+                    logger.debug(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool result: {tool_name} -> {tool_result.content[0].text}")
+
                     tool_responses_parts.append(
                         types.Part.from_function_response(
                             name=tool_name,
@@ -113,31 +163,35 @@ class GeminiClient(LLMClient):
             if tool_responses_parts:
                 contents.append(types.Content(role='user', parts=tool_responses_parts))
             else:
-                logger.info(f'LLM did not request any tool calls for model: {self.model_name}')
+                logger.info(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), LLM did not request any tool calls")
                 break
 
         if response_format is None:
-            logger.info(f'LLM chat response received from {self.model_name}')
-            logger.debug(f'Response message: {json.dumps(candidate.model_dump(mode="json"), indent=2)}')
+            logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Response ready, no need to restructure')
+            logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Response: {response.text}')
             return response.text
         else:
             contents.append(types.Content(role='user', parts=[types.Part.from_text(text='Respond in a structured format')]))
-            logger.info(f'LLM chat response restructured request sent to {self.model_name}')
-            logger.debug(f'Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
-            logger.debug(f'json schema: {json.dumps(response_format, indent=2)}')
+            config = types.GenerateContentConfig(
+                system_instruction=messages[0]['content'],
+                temperature=temperature,
+                response_mime_type='application/json',
+                response_schema=response_format,
+            )
+
+            logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request sent')
+            logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
+            logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
             response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=messages[0]['content'],
-                    temperature=0.0,
-                    response_mime_type='application/json',
-                    response_schema=response_format,
-                )
+                config=config
             )
-            logger.info(f'LLM chat response restructured received from {self.model_name}')
-            logger.debug(f'Response data: {json.dumps(response.model_dump(mode="json"), indent=2)}')
+            result = json.loads(response.text)
+            logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure response received')
+            logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure response: {json.dumps(response.model_dump(mode="json"), indent=2)}')
 
-            logger.debug(f'json schema: {json.dumps(response_format, indent=2)}')
-            logger.debug(f'Restructured response content: {response.text}')
-            return json.loads(response.text)
+            logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Response ready, restructured')
+            logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructured response: {json.dumps(result, indent=2)}')
+
+            return result

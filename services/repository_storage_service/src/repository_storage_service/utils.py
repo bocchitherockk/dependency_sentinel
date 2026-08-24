@@ -112,18 +112,7 @@ def commit_and_push_changes(repository_path: Path) -> None:
     repo.git.add(A=True)  # Stage all changes
     repo.index.commit('Update manifest files')
     current_branch = repo.active_branch.name
-    
-    github_access_token: str = os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')
-    origin = repo.remotes.origin
-    url = origin.url
-    if github_access_token and url.startswith('https://github.com/'):
-        auth_url = url.replace('https://github.com/', f'https://oauth2:{github_access_token}@github.com/')
-        origin.set_url(auth_url)
-        
     repo.git.push('-u', 'origin', current_branch)
-    
-    # Revert back the origin url to not leak the token if the repo object is cached or stored
-    origin.set_url(url)
     logger.info(f"Changes committed and pushed for repository at '{repository_path}' on branch '{current_branch}'.")
 
 def create_pull_request(

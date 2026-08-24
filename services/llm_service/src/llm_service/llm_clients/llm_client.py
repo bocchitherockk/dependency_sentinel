@@ -24,6 +24,16 @@ class LLMClient(ABC):
         response_format: None | dict[str, Any] = None,
         temperature: float = 0.0,
         think: bool = False,
+    ):
+        pass
+
+    @abstractmethod
+    async def agent(
+        self,
+        messages: list[dict[str, Any]],
+        response_format: None | dict[str, Any] = None,
+        temperature: float = 0.0,
+        think: bool = False,
         mcp_client: fastmcp.Client | None = None,
     ):
         pass
@@ -41,7 +51,7 @@ class LLMClient(ABC):
         ]
         chat_result: list[str] = await self.chat(
             messages=messages,
-            response_format=TypeAdapter(set[str]).json_schema(),
+            response_format=TypeAdapter(list[str]).json_schema(), # gemini client does not like "uniqueItems": true, so we use a list of strings instead of a set of strings
         )
 
         result: list[File] = []
@@ -85,12 +95,6 @@ class LLMClient(ABC):
             response_format=ManifestFile.model_json_schema(),
         )
         result: ManifestFile = ManifestFile(**chat_result)
-
-        print(result.path)
-        print(type(result.path))
-        print(manifest_file.path)
-        print(type(manifest_file.path))
-        print(result.path == str(manifest_file.path))
 
         if result.path != str(manifest_file.path):
             logger.error(f"Manifest file path '{result.path}' returned by the LLM does not match the provided manifest file path '{manifest_file.path}'.")
@@ -138,7 +142,7 @@ class LLMClient(ABC):
         ]
         
         async with fastmcp.Client(f"{services['mcp-server']['endpoint']}/mcp") as mcp_client:
-            modifications_summary: str = await self.chat(
+            modifications_summary: str = await self.agent(
                 messages=messages,
                 mcp_client=mcp_client,
             )
