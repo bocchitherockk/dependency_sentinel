@@ -1,7 +1,12 @@
+from logging import Logger
+
 import httpx
 
+from common.logging.global_logger import get_global_logger
 from common.schemas.Dependency import Dependency
 from common.schemas.VulnerabilityItem import VulnerabilityItem
+
+logger: Logger = get_global_logger(__name__)
 
 class SecurityRegistry:
     ecosystems_url: str = 'https://storage.googleapis.com/osv-vulnerabilities/ecosystems.txt'
@@ -12,6 +17,7 @@ class SecurityRegistry:
     @staticmethod
     def get_supported_ecosystems() -> list[str]:
         if SecurityRegistry.supported_ecosystems is None:
+            logger.info(f'Fetching supported ecosystems from {SecurityRegistry.ecosystems_url}')
             # Note:
             # Fetch the supported ecosystems from the OSV.dev service
             # I am using a synchronous request here because this method is expected to be called only once during the lifetime of the application
@@ -28,15 +34,19 @@ class SecurityRegistry:
     def correct_ecosystem_name(ecosystem: str) -> str:
         for supported_ecosystem in SecurityRegistry.get_supported_ecosystems():
             if supported_ecosystem.lower() == ecosystem.lower():
+                logger.info(f"Ecosystem '{ecosystem}' is supported by OSV.dev as '{supported_ecosystem}'.")
                 return supported_ecosystem
+
+        logger.error(f"Ecosystem '{ecosystem}' is not supported by OSV.dev. Supported ecosystems: {SecurityRegistry.supported_ecosystems}")
         raise ValueError(f"Ecosystem '{ecosystem}' is not supported by OSV.dev. Supported ecosystems: {SecurityRegistry.supported_ecosystems}")
 
     @staticmethod
     async def query_vulnerabilities(dependency: Dependency) -> list[VulnerabilityItem]:
+        registry_name: str = SecurityRegistry.correct_ecosystem_name(dependency.registry_name)
         payload = {
             'package': {
                 'name': dependency.name,
-                'ecosystem': SecurityRegistry.correct_ecosystem_name(dependency.registry_name)
+                'ecosystem': registry_name,
             },
             'version': dependency.version
         }
@@ -56,4 +66,9 @@ class SecurityRegistry:
             )
             for vuln in vulns
         ]
+        logger.info(f"Found {len(result)} vulnerabilities for dependency '{dependency.name}' version '{dependency.version}' in registry '{registry_name}'.")
+        logger.debug(f"Vulnerabilities details: {result}")
         return result
+
+logger.info(f'SecurityRegistry initialized with OSV.dev service.')
+logger.debug(f'Supported ecosystems: {SecurityRegistry.get_supported_ecosystems()}')

@@ -27,10 +27,10 @@ class BaseRegistryAdapter(ABC):
     
     @staticmethod
     @abstractmethod
-    async def get_latest_compatible_version_dependency(dependency: Dependency) -> Dependency:
+    async def get_latest_compatible_version_dependency(dependency: Dependency) -> Dependency | None:
         pass
 
     @staticmethod
     @abstractmethod
-    async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency]:
+    async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency] | None:
         pass

@@ -1,7 +1,8 @@
+import asyncio
+from contextlib import asynccontextmanager
 import os
 from pathlib import Path
-from contextlib import asynccontextmanager
-import asyncio
+from logging import Logger
 
 import fastapi
 from fastapi import FastAPI, HTTPException
@@ -17,6 +18,7 @@ from repository_storage_service.utils import (
     create_pull_request,
 )
 
+from common.logging.global_logger import get_global_logger
 from common.config import services
 from common.schemas.CreateBranchRequest import CreateBranchRequest
 from common.schemas.UpdateFileContentRequest import UpdateFileContentRequest
@@ -30,8 +32,12 @@ from events.schemas.ManifestFilesEditedEvent import ManifestFilesEditedEvent
 from events.schemas.ScanCompletedEvent import ScanCompletedEvent
 
 
-os.chdir('./services/repository_storage_service/') # change current working directory
-os.makedirs('./repositories', exist_ok=True)
+logger: Logger = get_global_logger(__name__)
+
+BASE_PATH = './services/repository_storage_service/'
+REPOSITORIES_PATH = BASE_PATH + 'repositories/'
+os.makedirs(REPOSITORIES_PATH, exist_ok=True)
+logger.info(f'Created base path for repositories: {REPOSITORIES_PATH}')
 
 
 event_producer: EventProducer = EventProducer()
@@ -46,9 +52,11 @@ manifest_files_edited_event_consumer: EventConsumer = EventConsumer(
 
 async def handle_topic_scan_started(key: str, value: dict, msg):
     scan_started_event: ScanStartedEvent = ScanStartedEvent(**value)
+    logger.info(f'Received ScanStartedEvent for repository: {scan_started_event.repository_url}')
+    logger.debug(f'ScanStartedEvent details: {scan_started_event}')
     repository_url: str = scan_started_event.repository_url
     repository_owner_name, repository_name = get_repository_name_and_owner_name(repository_url)
-    destination: Path = Path('./repositories') / repository_name
+    destination: Path = Path(REPOSITORIES_PATH) / repository_name
 
     default_branch: str = clone_repository(repository_url, destination)
 
@@ -59,24 +67,30 @@ async def handle_topic_scan_started(key: str, value: dict, msg):
         repository_owner_name=repository_owner_name,
         default_branch=default_branch,
     )
+    logger.info(f'Publishing RepositoryClonedEvent for repository: {repository_name}')
+    logger.debug(f'RepositoryClonedEvent details: {repository_cloned_event}')
     await event_producer.publish(event=repository_cloned_event)
 
 async def handle_topic_manifest_files_edited(key: str, value: dict, msg):
     manifest_files_edited_event: ManifestFilesEditedEvent = ManifestFilesEditedEvent(**value)
+    logger.info(f'Received ManifestFilesEditedEvent for repository: {manifest_files_edited_event.repository_name}')
+    logger.debug(f'ManifestFilesEditedEvent details: {manifest_files_edited_event}')
     if manifest_files_edited_event.summary is None:
         # If the summary is empty, it means that no manifest file was modified
         # and a git branch was not created
         # so we don't need to commit any changes or create a pull request.
+        logger.info(f'No changes to commit for repository: {manifest_files_edited_event.repository_name}')
         return
 
     repository_name: str = manifest_files_edited_event.repository_name
     repository_owner_name: str = manifest_files_edited_event.repository_owner_name
+    destination: Path = Path(REPOSITORIES_PATH) / repository_name
 
-    destination: Path = Path('./repositories') / repository_name
     commit_and_push_changes(destination)
     create_pull_request(
         repository_name=repository_name,
         repository_owner_name=repository_owner_name,
+        default_branch=manifest_files_edited_event.default_branch,
         branch_name=manifest_files_edited_event.update_branch,
         body=manifest_files_edited_event.summary
     )
@@ -86,6 +100,8 @@ async def handle_topic_manifest_files_edited(key: str, value: dict, msg):
         repository_name=repository_name,
         repository_owner_name=repository_owner_name,
     )
+    logger.info(f'Publishing ScanCompletedEvent for repository: {repository_name}')
+    logger.debug(f'ScanCompletedEvent details: {scan_completed_event}')
     await event_producer.publish(event=scan_completed_event)
 
 
@@ -128,11 +144,14 @@ def get_fs_object_endpoint(
     path: str = fastapi.Path(...),
     display_files_content: bool = fastapi.Query(False),
 ) -> Directory | File:
-    root_path: Path = Path('./repositories')
+    root_path: Path = Path(REPOSITORIES_PATH)
     fs_object_path: Path = root_path / path
     try:
         fs_object: Directory | File = get_fs_object(fs_object_path, display_files_content)
+        logger.info(f"Retrieved filesystem object for path '{path}' with display_files_content={display_files_content}.")
+        logger.debug(f"Filesystem object details: {fs_object}")
     except FileNotFoundError:
+        logger.error(f"Path '{path}' does not exist.")
         raise HTTPException(
             status_code=404,
             detail=f"Path '{path}' does not exist.",
@@ -145,47 +164,55 @@ def update_file_content_endpoint(
     path: str = fastapi.Path(...),
     update_file_content_request: UpdateFileContentRequest = fastapi.Body(...),
 ):
-    root_path: Path = Path('./repositories')
+    root_path: Path = Path(REPOSITORIES_PATH)
     file_path = root_path / path
     if not file_path.exists():
+        logger.error(f"Path '{path}' does not exist.")
         raise HTTPException(
             status_code=404,
             detail=f"Path '{path}' does not exist.",
         )
 
     if not file_path.is_file():
+        logger.error(f"Path '{path}' is not a file.")
         raise HTTPException(
             status_code=400,
             detail=f"Path '{path}' is not a file.",
         )
 
     file_path.write_text(update_file_content_request.new_content, encoding='utf-8')
-
-    return File(
+    result: File = File(
         path=file_path.relative_to(root_path),
         name=file_path.name,
         content=update_file_content_request.new_content
     )
+    logger.info(f"Updated content of file at path '{path}'.")
+    logger.debug(f"Updated file details: {result}")
+
+    return result
 
 @app.post('/create_branch')
 async def create_branch_endpoint(create_branch_request: CreateBranchRequest = fastapi.Body(...)):
-    repository_path: Path = Path('./repositories') / create_branch_request.repository_name
+    repository_path: Path = Path(REPOSITORIES_PATH) / create_branch_request.repository_name
     branch_name: str = create_branch_request.branch_name
 
     try:
         create_branch(repository_path, branch_name)
+        logger.info(f"Branch '{branch_name}' created successfully for repository '{create_branch_request.repository_name}'.")
     except FileNotFoundError:
+        logger.error(f"Repository '{create_branch_request.repository_name}' does not exist.")
         raise HTTPException(
             status_code=404,
             detail=f"Repository '{create_branch_request.repository_name}' does not exist.",
         )
     except ValueError as e:
+        logger.error(f"Unable to create branch '{branch_name}': {e}")
         raise HTTPException(
             status_code=400,
             detail=str(e),
         )
 
-    return {"message": f"Branch '{branch_name}' created successfully in repository '{create_branch_request.repository_name}'."}
+    return {'message': f"Branch '{branch_name}' created successfully for repository '{create_branch_request.repository_name}'."}
 
 ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
 ################## HACK #####################

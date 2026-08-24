@@ -25,7 +25,7 @@ async def detect_manifests(
 async def extract_dependencies(
     manifest_file: File = Body(...),
     model_name: str | None = Query(None)
-) -> ManifestFile:
+) -> ManifestFile | None:
     model = LLMSelector.get_llm_model(model_name)
     return await model.extract_dependencies(manifest_file)
 

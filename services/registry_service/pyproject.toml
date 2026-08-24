@@ -24,7 +24,7 @@ common = { workspace = true }
 events = { workspace = true }
 
 [project.scripts]
-registry-service = "registry_service.main:main"
+registry-service = "registry_service.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/registry_service"]

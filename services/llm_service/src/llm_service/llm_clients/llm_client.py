@@ -1,16 +1,20 @@
 from abc import ABC, abstractmethod
 from typing import Any
+from logging import Logger
 
 import httpx
 import fastmcp
 from pydantic import TypeAdapter
 
+from common.logging.global_logger import get_global_logger
 from common.config import services
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
 from common.schemas.DependencyUpdateContext import DependencyUpdateContext
 from common.schemas.DependencyUpdatePlan import DependencyUpdatePlan
 from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
+
+logger: Logger = get_global_logger(__name__)
 
 class LLMClient(ABC):
     @abstractmethod
@@ -39,24 +43,32 @@ class LLMClient(ABC):
             messages=messages,
             response_format=TypeAdapter(set[str]).json_schema(),
         )
+
         result: list[File] = []
         for file_path in chat_result:
             found: bool = False
             for file in files:
-                if str(file.path) == file_path or file.path.as_posix() == file_path or str(file.path).endswith(file_path):
+                if str(file.path) == file_path:
                     result.append(file)
                     found = True
                     break
             if not found:
-                print(f"Warning: File path '{file_path}' returned by the LLM is not in the provided list of files.")
+                logger.error(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
+                # We will not raise an error here to avoid failing the entire process due to a single unexpected file path.
+                # Instead, we log the error, we don't include the file in the result, and continue processing the remaining files.
+                # raise ValueError(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
 
+        logger.info(f'LLM detected {len(result)} manifest files out of {len(files)} total files.')
+        logger.debug(f'LLM detected manifest files: {[str(file.path) for file in result]}')
         return result
 
-    async def extract_dependencies(self, manifest_file: File) -> ManifestFile:
+    async def extract_dependencies(self, manifest_file: File) -> ManifestFile | None:
         async with httpx.AsyncClient(timeout=None) as client:
             response = await client.get(f"{services['registry-service']['endpoint']}/supported-registries")
         response.raise_for_status()
         supported_registries: list[str] = response.json()
+        logger.info(f'Supported registries retrieved from Registry Service')
+        logger.debug(f'Supported registries: {supported_registries}')
 
         messages: list[dict[str, Any]] = [
             {
@@ -72,7 +84,22 @@ class LLMClient(ABC):
             messages=messages,
             response_format=ManifestFile.model_json_schema(),
         )
-        return ManifestFile(**chat_result)
+        result: ManifestFile = ManifestFile(**chat_result)
+
+        print(result.path)
+        print(type(result.path))
+        print(manifest_file.path)
+        print(type(manifest_file.path))
+        print(result.path == str(manifest_file.path))
+
+        if result.path != str(manifest_file.path):
+            logger.error(f"Manifest file path '{result.path}' returned by the LLM does not match the provided manifest file path '{manifest_file.path}'.")
+            # raise ValueError(f"Manifest file path '{result.path}' returned by the LLM does not match the provided manifest file path '{manifest_file.path}'.")
+            return None
+
+        logger.info(f'LLM extracted dependencies for manifest file: {manifest_file.path}')
+        logger.debug(f'Extracted dependencies: {result}')
+        return result
 
     async def get_update_plan(self, dependency_update_context: DependencyUpdateContext) -> DependencyUpdatePlan:
         messages: list[dict[str, Any]] = [
@@ -89,7 +116,10 @@ class LLMClient(ABC):
             messages=messages,
             response_format=DependencyUpdatePlan.model_json_schema(),
         )
-        return DependencyUpdatePlan(**chat_result)
+        result: DependencyUpdatePlan = DependencyUpdatePlan(**chat_result)
+        logger.info(f'LLM generated update plan for dependency: {dependency_update_context.current_version_dependency_report.name}')
+        logger.debug(f'Generated update plan: {result}')
+        return result
 
     async def update_manifest(
         self,
@@ -108,12 +138,13 @@ class LLMClient(ABC):
         ]
         
         async with fastmcp.Client(f"{services['mcp-server']['endpoint']}/mcp") as mcp_client:
-            chat_result: str = await self.chat(
+            modifications_summary: str = await self.chat(
                 messages=messages,
                 mcp_client=mcp_client,
             )
-            
-        return chat_result
+        logger.info(f'LLM updated manifest file: {manifest_file.path}')
+        logger.debug(f'Modifications summary: {modifications_summary}')
+        return modifications_summary
 
     # These methods are here in case a specific LLM client wants to provide its own prompts and response formats, otherwise these are the default ones that will be used.
     # They accept **kwargs so that they can be customized by specific LLM clients if needed.

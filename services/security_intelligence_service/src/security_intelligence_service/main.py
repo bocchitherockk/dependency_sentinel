@@ -1,9 +1,11 @@
-from contextlib import asynccontextmanager
 import asyncio
+from contextlib import asynccontextmanager
+from logging import Logger
 
 from fastapi import FastAPI
 import uvicorn
 
+from common.logging.global_logger import get_global_logger
 from common.config import services
 from common.schemas.File import File
 from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
@@ -13,6 +15,8 @@ from events.schemas.ManifestFilesEditedEvent import ManifestFilesEditedEvent
 from security_intelligence_service.service import analyze_update_context_and_update_manifests
 
 
+logger: Logger = get_global_logger(__name__)
+
 event_producer: EventProducer = EventProducer()
 event_consumer: EventConsumer = EventConsumer(
     topic=KafkaConfig.TOPIC_DEPENDENCIES_QUERIED,
@@ -21,6 +25,9 @@ event_consumer: EventConsumer = EventConsumer(
 
 async def handle_topic_dependencies_queried(key: str, value: dict, msg):
     dependencies_queried_event: DependenciesQueriedEvent = DependenciesQueriedEvent(**value)
+    logger.info(f"Received DependenciesQueriedEvent for repository '{dependencies_queried_event.repository_name}' owned by '{dependencies_queried_event.repository_owner_name}'.")
+    logger.debug(f'DependenciesQueriedEvent details: {dependencies_queried_event}')
+
     repository_name: str = dependencies_queried_event.repository_name
     repository_owner_name: str = dependencies_queried_event.repository_owner_name
     manifest_files_update_context: list[ManifestFileUpdateContext] = dependencies_queried_event.manifest_files_update_context
@@ -39,6 +46,8 @@ async def handle_topic_dependencies_queried(key: str, value: dict, msg):
         summary=summary,
     )
     await event_producer.publish(event=manifest_files_edited_event)
+    logger.info(f"Published ManifestFilesEditedEvent for repository '{repository_name}' owned by '{repository_owner_name}' with update branch '{branch_name}'.")
+    logger.debug(f'ManifestFilesEditedEvent details: {manifest_files_edited_event}')
 
 
 @asynccontextmanager
