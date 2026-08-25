@@ -1,7 +1,7 @@
-import asyncio
 import os
 from typing import override
 from logging import Logger
+import threading
 
 import httpx
 import semver
@@ -30,7 +30,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     # Therefore, we will use a lower rate limit of 59 requests per minute to avoid hitting the rate limit of 60 requests per minute in edge cases.
     rate_limiter: RateLimiter = RateLimiter(max_rate=59, time_window=60.0)
 
-    _supported_registries_lock = asyncio.Lock()
+    _supported_registries_lock = threading.Lock()
 
     @override
     @staticmethod
