@@ -177,15 +177,16 @@ async def analyze_update_context_and_update_manifests(
     #     - Le plan de mise à jour (la décision de l'IA)
     # → Le LLM réécrit le contenu du fichier avec les bonnes versions
     # ─────────────────────────────────────────────────────────────────
-    summaries: list[str] = await asyncio.gather(*[
+    reasonings: list[str] = await asyncio.gather(*[
         update_manifest_file(manifest_file, manifest_file_update_plan)
         for manifest_file, manifest_file_update_plan in zip(manifest_files_to_update, manifest_files_update_plans)
     ])
     
     summary: str = ''
-    for manifest_file_update_plan, reasoning in zip(manifest_files_update_plans, summaries):
-        summary += f"###### file: {manifest_file_update_plan.manifest_file_path} ######\n"
-        summary += f"Reasoning:\n{reasoning}\n"
+    for manifest_file_update_plan, reasoning in zip(manifest_files_update_plans, reasonings):
+        cleaned_reasoning: str = reasoning.strip('"').replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+        summary += f"# file: {manifest_file_update_plan.manifest_file_path}\n"
+        summary += f"Reasoning:\n{cleaned_reasoning}\n"
         summary += "───────────────────────────────────────────\n"
 
     logger.info(f"Manifest files updated for repository '{repository_name}' on branch '{branch_name}'.")
