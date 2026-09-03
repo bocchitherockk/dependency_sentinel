@@ -26,7 +26,7 @@ def request_scan(repository_url: str, gateway_url: str) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    gateway_url: str = f"{services['gateway']['endpoint']}/start_scan"
+    gateway_url: str = f"{services['gateway']['endpoint']}/start-scan"
 
     try:
         payload = request_scan(args.url, gateway_url)

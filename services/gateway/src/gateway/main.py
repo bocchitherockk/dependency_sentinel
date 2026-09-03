@@ -12,7 +12,7 @@ app = FastAPI(
     version="0.2.0",
 )
 
-@app.post("/start_scan")
+@app.post('/start-scan')
 async def start_scan_endpoint(start_scan_request: StartScanRequest):
     async with httpx.AsyncClient() as client:
         response = await client.post(
