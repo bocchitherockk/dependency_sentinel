@@ -18,32 +18,41 @@ from common.schemas.UpdateManifestRequest import UpdateManifestRequest
 logger: Logger = get_global_logger(__name__)
 
 async def get_dependency_update_plan(dependency_update_context: DependencyUpdateContext) -> DependencyUpdatePlan:
-    async with httpx.AsyncClient(timeout=None) as client:
-        response = await client.post(
-            f"{services['llm-service']['endpoint']}/get-update-plan",
-            json=dependency_update_context.model_dump(mode='json'),
+    try:
+        async with httpx.AsyncClient(timeout=None) as client:
+            response = await client.post(
+                f"{services['llm-service']['endpoint']}/get-update-plan",
+                params={'model_name': 'gemini-3.5-flash-lite'},
+                json=dependency_update_context.model_dump(mode='json'),
+            )
+        response.raise_for_status()
+        result: DependencyUpdatePlan = DependencyUpdatePlan(**response.json())
+        logger.info(f"DependencyUpdatePlan generated for dependency '{dependency_update_context.current_version_dependency_report.name}' with current version '{dependency_update_context.current_version_dependency_report.version}' in registry '{dependency_update_context.current_version_dependency_report.registry_name}'.")
+        logger.debug(f'DependencyUpdatePlan details: {result}')
+        return result
+    except Exception as e:
+        logger.error(f"Failed to get update plan for dependency '{dependency_update_context.current_version_dependency_report.name}': {e}. Skipping it.")
+        return DependencyUpdatePlan(
+            dependency_name=dependency_update_context.current_version_dependency_report.name,
+            current_version=dependency_update_context.current_version_dependency_report.version,
+            recommended_version=dependency_update_context.current_version_dependency_report.version,
+            reasoning=f"Error occurred during LLM processing: {e}"
         )
-    response.raise_for_status()
-    result: DependencyUpdatePlan = DependencyUpdatePlan(**response.json())
-    logger.info(f"DependencyUpdatePlan generated for dependency '{dependency_update_context.current_version_dependency_report.name}' with current version '{dependency_update_context.current_version_dependency_report.version}' in registry '{dependency_update_context.current_version_dependency_report.registry_name}'.")
-    logger.debug(f'DependencyUpdatePlan details: {result}')
-    return result
 
 async def get_dependencies_update_plan(dependencies_update_context: list[DependencyUpdateContext]) -> list[DependencyUpdatePlan]:
-    tasks = [
-        get_dependency_update_plan(context)
-        for context in dependencies_update_context
-    ]
-    result: list[DependencyUpdatePlan] = await asyncio.gather(*tasks)
+    result: list[DependencyUpdatePlan] = []
+    for context in dependencies_update_context:
+        plan = await get_dependency_update_plan(context)
+        result.append(plan)
+        await asyncio.sleep(5)  # Eviter la limite Gemini de 15 requêtes/minute
+        
     logger.info(f"DependenciesUpdatePlan generated for {len(result)} dependencies.")
     logger.debug(f'DependenciesUpdatePlan details: {result}')
     return result
 
 async def get_manifest_file_update_plan(manifest_file_update_context: ManifestFileUpdateContext) -> ManifestFileUpdatePlan:
-    dependencies_update_plans, dev_dependencies_update_plans = await asyncio.gather(
-        get_dependencies_update_plan(manifest_file_update_context.dependencies_update_context),
-        get_dependencies_update_plan(manifest_file_update_context.dev_dependencies_update_context)
-    )
+    dependencies_update_plans = await get_dependencies_update_plan(manifest_file_update_context.dependencies_update_context)
+    dev_dependencies_update_plans = await get_dependencies_update_plan(manifest_file_update_context.dev_dependencies_update_context)
 
     result: ManifestFileUpdatePlan = ManifestFileUpdatePlan(
         manifest_file_path=manifest_file_update_context.manifest_file_path,
@@ -103,7 +112,6 @@ async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpd
     async with httpx.AsyncClient(timeout=None) as client:
         response = await client.post(
             f"{services['llm-service']['endpoint']}/update-manifest",
-            # params={ 'model_name': 'qwen2.5-coder:1.5b' },
             params={ 'model_name': 'gemini-3.5-flash-lite' },
             json=update_manifest_request.model_dump(mode='json'),
         )
@@ -131,10 +139,10 @@ async def analyze_update_context_and_update_manifests(
     # → L'IA analyse les 3 versions + failles et DÉCIDE quelle version
     #   garder pour chaque dépendance (avec reasoning)
     # ─────────────────────────────────────────────────────────────────
-    manifest_files_update_plans: list[ManifestFileUpdatePlan] = await asyncio.gather(*[
-        get_manifest_file_update_plan(manifest_file_update_context)
-        for manifest_file_update_context in manifest_files_update_context
-    ])
+    manifest_files_update_plans: list[ManifestFileUpdatePlan] = []
+    for manifest_file_update_context in manifest_files_update_context:
+        plan = await get_manifest_file_update_plan(manifest_file_update_context)
+        manifest_files_update_plans.append(plan)
 
     # Clean up the update plans to remove any dependencies that don't actually need updates
     for manifest_file_update_plan in manifest_files_update_plans:

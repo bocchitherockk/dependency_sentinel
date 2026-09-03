@@ -8,6 +8,7 @@ dependencies = [
     "common",
     "events",
     "fastapi>=0.139.2",
+    "httpx>=0.28.1",
     "uvicorn>=0.51.0",
 ]
 

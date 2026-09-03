@@ -9,9 +9,9 @@ COPY pyproject.toml uv.lock ./
 # Copier les librairies partagees
 COPY libs/ libs/
 # Copier uniquement le code de ce service
-COPY services/repository_scanner_service/ services/repository_scanner_service/
+COPY services/scheduler/ services/scheduler/
 
 # Installer uniquement les dependances necessaires a ce service
-RUN uv sync --package repository-scanner-service
+RUN uv sync --package scheduler
 
-ENTRYPOINT ["uv", "run", "--package", "repository-scanner-service", "repository-scanner-service"]
+ENTRYPOINT ["uv", "run", "--package", "scheduler", "scheduler"]

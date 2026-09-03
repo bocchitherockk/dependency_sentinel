@@ -9,9 +9,9 @@ COPY pyproject.toml uv.lock ./
 # Copier les librairies partagees
 COPY libs/ libs/
 # Copier uniquement le code de ce service
-COPY services/repository_scanner_service/ services/repository_scanner_service/
+COPY services/security_intelligence_service/ services/security_intelligence_service/
 
 # Installer uniquement les dependances necessaires a ce service
-RUN uv sync --package repository-scanner-service
+RUN uv sync --package security-intelligence-service
 
-ENTRYPOINT ["uv", "run", "--package", "repository-scanner-service", "repository-scanner-service"]
+ENTRYPOINT ["uv", "run", "--package", "security-intelligence-service", "security-intelligence-service"]

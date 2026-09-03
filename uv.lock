@@ -683,6 +683,7 @@ dependencies = [
     { name = "common" },
     { name = "events" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "uvicorn" },
 ]
 
@@ -691,6 +692,7 @@ requires-dist = [
     { name = "common", editable = "libs/common" },
     { name = "events", editable = "libs/events" },
     { name = "fastapi", specifier = ">=0.139.2" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "uvicorn", specifier = ">=0.51.0" },
 ]
 

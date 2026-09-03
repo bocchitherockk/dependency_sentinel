@@ -61,7 +61,9 @@ services:
     networks:
     - dependency-network
   scheduler:
-    build: .
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
     container_name: scheduler
     command:
     - scheduler
@@ -87,7 +89,9 @@ services:
       kafka:
         condition: service_healthy
   gateway:
-    build: .
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
     container_name: gateway
     command:
     - gateway
@@ -113,7 +117,9 @@ services:
       scheduler:
         condition: service_started
   repository-storage-service:
-    build: .
+    build:
+      context: .
+      dockerfile: services/repository_storage_service/Dockerfile
     container_name: repository-storage-service
     command:
     - repository-storage-service
@@ -139,7 +145,9 @@ services:
       kafka:
         condition: service_healthy
   repository-scanner-service:
-    build: .
+    build:
+      context: .
+      dockerfile: services/repository_scanner_service/Dockerfile
     container_name: repository-scanner-service
     command:
     - repository-scanner-service
@@ -165,7 +173,9 @@ services:
       kafka:
         condition: service_healthy
   llm-service:
-    build: .
+    build:
+      context: .
+      dockerfile: services/llm_service/Dockerfile
     container_name: llm-service
     command:
     - llm-service
@@ -193,7 +203,9 @@ services:
       kafka:
         condition: service_healthy
   registry-service:
-    build: .
+    build:
+      context: .
+      dockerfile: services/registry_service/Dockerfile
     container_name: registry-service
     command:
     - registry-service
@@ -219,7 +231,9 @@ services:
       kafka:
         condition: service_healthy
   mcp-server:
-    build: .
+    build:
+      context: .
+      dockerfile: services/mcp-server/Dockerfile
     container_name: mcp-server
     command:
     - mcp-server
@@ -245,7 +259,9 @@ services:
       kafka:
         condition: service_healthy
   security-intelligence-service:
-    build: .
+    build:
+      context: .
+      dockerfile: services/security_intelligence_service/Dockerfile
     container_name: security-intelligence-service
     command:
     - security-intelligence-service

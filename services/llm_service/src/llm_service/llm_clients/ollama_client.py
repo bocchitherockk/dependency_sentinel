@@ -17,17 +17,17 @@ class OllamaClient(LLMClient):
     models = {
         'qwen2.5-coder:1.5b': {
             'model_name': 'qwen2.5-coder:1.5b',
-            'host': '127.0.0.1',
+            'host': 'host.docker.internal',
             'port': 11434,
-            'endpoint': 'http://127.0.0.1:11434',
+            'endpoint': 'http://host.docker.internal:11434',
             'supports_thinking': False,
             'supports_tool_calls': True,
         },
         'qwen3:8b': {
             'model_name': 'qwen3:8b',
-            'host': '127.0.0.1',
+            'host': 'host.docker.internal',
             'port': 11434,
-            'endpoint': 'http://127.0.0.1:11434',
+            'endpoint': 'http://host.docker.internal:11434',
             'supports_thinking': True,
             'supports_tool_calls': True,
         },

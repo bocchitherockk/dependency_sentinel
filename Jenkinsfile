@@ -385,6 +385,13 @@ Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
                 bat 'docker-compose build'
             }
         }
+
+        stage('Deploy (Continuous Deployment)') {
+            steps {
+                echo 'Deploying application locally using docker-compose...'
+                bat 'docker-compose up -d'
+            }
+        }
     }
 
     post {
