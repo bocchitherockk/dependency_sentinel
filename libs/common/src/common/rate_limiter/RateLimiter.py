@@ -59,7 +59,7 @@ class RateLimiter:
                     return
 
                 wait: float = self._time_until_available(now, value)
+                logger.info(f'Rate limit not available for value {value}. Need to wait for {wait} seconds before retrying.')
 
-                # Lock released while sleeping
-                await asyncio.sleep(wait)
-                logger.info(f'Rate limit acquisition for value {value} completed after waiting for {wait} seconds.')
+            # Lock released while sleeping
+            await asyncio.sleep(wait)

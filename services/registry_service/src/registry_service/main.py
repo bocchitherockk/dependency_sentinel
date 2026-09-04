@@ -74,6 +74,6 @@ def get_supported_registries_endpoint() -> list[str]:
 def main() -> None:
     uvicorn.run(
         app,
-        host=services['registry-service']['host'],
+        host=services['registry-service']['bind_host'],
         port=services['registry-service']['port'],
     )

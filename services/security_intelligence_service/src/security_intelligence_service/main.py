@@ -74,6 +74,6 @@ app = FastAPI(
 def main() -> None:
     uvicorn.run(
         app,
-        host=services['security-intelligence-service']['host'],
+        host=services['security-intelligence-service']['bind_host'],
         port=services['security-intelligence-service']['port'],
     )

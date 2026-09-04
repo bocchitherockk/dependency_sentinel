@@ -49,6 +49,6 @@ async def update_manifest(
 def main() -> None:
     uvicorn.run(
         app,
-        host=services['llm-service']['host'],
+        host=services['llm-service']['bind_host'],
         port=services['llm-service']['port'],
     )

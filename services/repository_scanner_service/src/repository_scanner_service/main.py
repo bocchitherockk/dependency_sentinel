@@ -106,9 +106,8 @@ app = FastAPI(
 ################## END #####################
 
 def main() -> None:
-    scanner_service = services['repository-scanner-service']
     uvicorn.run(
         app,
-        host=scanner_service["host"],
-        port=scanner_service["port"],
+        host=services['repository-scanner-service']["bind_host"],
+        port=services['repository-scanner-service']["port"],
     )
