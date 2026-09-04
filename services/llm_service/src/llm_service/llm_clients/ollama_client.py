@@ -1,3 +1,4 @@
+import os
 from typing import Any, override
 import json
 from logging import Logger
@@ -7,27 +8,37 @@ import httpx
 import fastmcp
 from fastmcp.client.client import CallToolResult
 from mcp.types import Tool
+from dotenv import load_dotenv
 
 from common.logging.global_logger import get_global_logger
 from llm_service.llm_clients.llm_client import LLMClient
 
 logger: Logger = get_global_logger(__name__)
 
+load_dotenv()
+logger.info('Environment variables loaded from .env file.')
+logger.debug('Environment variables: ')
+logger.debug(f'USE_DOCKER: {os.getenv("USE_DOCKER")}')
+logger.debug(f'LOCAL_OLLAMA_DOCKER_HOST: {os.getenv("LOCAL_OLLAMA_DOCKER_HOST")}')
+logger.debug(f'LOCAL_OLLAMA_LOOPBACK_HOST: {os.getenv("LOCAL_OLLAMA_LOOPBACK_HOST")}')
+
 class OllamaClient(LLMClient):
+    ollama_host: str = os.getenv('LOCAL_OLLAMA_DOCKER_HOST') if os.getenv('USE_DOCKER') == 'true' else os.getenv('LOCAL_OLLAMA_LOOPBACK_HOST')
+    ollama_port: str = os.getenv('LOCAL_OLLAMA_PORT')
     models = {
         'qwen2.5-coder:1.5b': {
             'model_name': 'qwen2.5-coder:1.5b',
-            'host': 'host.docker.internal',
-            'port': 11434,
-            'endpoint': 'http://host.docker.internal:11434',
+            'host': ollama_host,
+            'port': ollama_port,
+            'endpoint': f'http://{ollama_host}:{ollama_port}',
             'supports_thinking': False,
             'supports_tool_calls': True,
         },
         'qwen3:8b': {
             'model_name': 'qwen3:8b',
-            'host': 'host.docker.internal',
-            'port': 11434,
-            'endpoint': 'http://host.docker.internal:11434',
+            'host': ollama_host,
+            'port': ollama_port,
+            'endpoint': f'http://{ollama_host}:{ollama_port}',
             'supports_thinking': True,
             'supports_tool_calls': True,
         },

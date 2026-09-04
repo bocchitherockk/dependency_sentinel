@@ -241,7 +241,7 @@ async def create_branch_endpoint(create_branch_request: CreateBranchRequest = fa
 def main() -> None:
     uvicorn.run(
         app,
-        host=services['repository-storage-service']['host'],
+        host=services['repository-storage-service']['bind_host'],
         port=services['repository-storage-service']['port'],
         # reload=True,
     )

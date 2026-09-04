@@ -11,8 +11,8 @@ COPY .python-version .
 COPY README.md .
 COPY .env .
 
-ARG DIR_NAME="gateway"
-ARG SERVICE_NAME="gateway"
+ARG DIR_NAME="mcp_server"
+ARG SERVICE_NAME="mcp-server"
 ENV SERVICE_NAME=${SERVICE_NAME}
 
 COPY libs/ libs/

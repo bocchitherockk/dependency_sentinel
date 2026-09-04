@@ -26,6 +26,6 @@ async def start_scan_endpoint(start_scan_request: StartScanRequest):
 def main():
     uvicorn.run(
         app,
-        host=services['gateway']['host'],
+        host=services['gateway']['bind_host'],
         port=services['gateway']['port'],
     )

@@ -350,7 +350,7 @@ Start Ollama before the Jenkins build or define OLLAMA_EXE in Jenkins.
                     set "UV_EXE=%WORKSPACE%\\tools\\uv\\uv.exe"
                     set "UV_PYTHON_INSTALL_DIR=%WORKSPACE%\\.uv-python"
                     set "UV_CACHE_DIR=%WORKSPACE%\\.uv-cache"
-                    set "PYTHONPATH=%WORKSPACE%\\libs\\common\\src;%WORKSPACE%\\libs\\events\\src;%WORKSPACE%\\services\\gateway\\src;%WORKSPACE%\\services\\repository_storage_service\\src;%WORKSPACE%\\services\\repository_scanner_service\\src;%WORKSPACE%\\services\\llm_service\\src;%WORKSPACE%\\services\\security_intelligence_service\\src;%WORKSPACE%\\services\\mcp-server\\src;%WORKSPACE%\\services\\registry_service\\src"
+                    set "PYTHONPATH=%WORKSPACE%\\libs\\common\\src;%WORKSPACE%\\libs\\events\\src;%WORKSPACE%\\services\\gateway\\src;%WORKSPACE%\\services\\repository_storage_service\\src;%WORKSPACE%\\services\\repository_scanner_service\\src;%WORKSPACE%\\services\\llm_service\\src;%WORKSPACE%\\services\\security_intelligence_service\\src;%WORKSPACE%\\services\\mcp_server\\src;%WORKSPACE%\\services\\registry_service\\src"
 
                     if exist test-results.xml (
                         del /q test-results.xml

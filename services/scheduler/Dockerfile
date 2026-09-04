@@ -2,16 +2,22 @@ FROM python:3.12-slim
 
 RUN pip install uv
 ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Copier la configuration globale du workspace
-COPY pyproject.toml uv.lock ./
-# Copier les librairies partagees
+COPY pyproject.toml .
+COPY .python-version .
+COPY README.md .
+COPY .env .
+
+ARG DIR_NAME="scheduler"
+ARG SERVICE_NAME="scheduler"
+ENV SERVICE_NAME=${SERVICE_NAME}
+
 COPY libs/ libs/
-# Copier uniquement le code de ce service
-COPY services/scheduler/ services/scheduler/
+COPY services/${DIR_NAME}/ services/${DIR_NAME}/
 
-# Installer uniquement les dependances necessaires a ce service
-RUN uv sync --package scheduler
+RUN uv sync --all-packages
 
-ENTRYPOINT ["uv", "run", "--package", "scheduler", "scheduler"]
+ENTRYPOINT ["sh", "-c", "uv run ${SERVICE_NAME}"]

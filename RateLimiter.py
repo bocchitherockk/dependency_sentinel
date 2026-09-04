@@ -3,9 +3,6 @@ from collections import deque
 from logging import Logger
 import time
 
-from common.logging.global_logger import get_global_logger
-
-logger: Logger = get_global_logger(__name__)
 
 class RateLimiter:
     def __init__(self, max_rate: int, time_window: float):
@@ -14,7 +11,7 @@ class RateLimiter:
         self.time_window: float = time_window
         self.history: deque[tuple[float, int]] = deque()
         self.lock = asyncio.Lock() # This lock is used to ensure that only one coroutine can modify the rate limiter's state at a time, preventing race conditions in a concurrent environment.
-        logger.info(f'RateLimiter initialized with max_rate: {self.max_rate}, time_window: {self.time_window} seconds')
+        print(f'RateLimiter initialized with max_rate: {self.max_rate}, time_window: {self.time_window} seconds')
 
     def _remove_expired(self, now: float):
         removed: int = 0
@@ -22,13 +19,13 @@ class RateLimiter:
             removed += 1
             timestamp, value = self.history.popleft()
             self.current_value -= value
-            logger.debug(f'Expired entry removed. Timestamp: {timestamp}, Value: {value}, Current value: {self.current_value}')
-        logger.info(f'Total expired entries removed: {removed}. Current value after cleanup: {self.current_value}')
+            print(f'Expired entry removed. Timestamp: {timestamp}, Value: {value}, Current value: {self.current_value}')
+        print(f'Total expired entries removed: {removed}. Current value after cleanup: {self.current_value}')
 
     def _time_until_available(self, now: float, value: int) -> float:
         total_value = self.current_value + value
         if total_value <= self.max_rate:
-            logger.error('This method should only be called when the requested value exceeds the max rate.')
+            print('This method should only be called when the requested value exceeds the max rate.')
             raise RuntimeError('This method should only be called when the requested value exceeds the max rate.')
 
         for i in range(len(self.history)):
@@ -36,16 +33,16 @@ class RateLimiter:
             if total_value <= self.max_rate:
                 earliest_time = self.history[i][0]
                 time_until_available = (earliest_time + self.time_window) - now
-                logger.info(f'Rate limit will be free after processing entry at index {i} (timestamp: {self.history[i][0]}, value: {self.history[i][1]}), time until available: {time_until_available} seconds')
+                print(f'Rate limit will be free after processing entry at index {i} (timestamp: {self.history[i][0]}, value: {self.history[i][1]}), time until available: {time_until_available} seconds')
                 return max(time_until_available, 0.0)
-            logger.debug(f'Entry at index {i} (timestamp: {self.history[i][0]}, value: {self.history[i][1]}) does not free up enough capacity. Total value after this entry: {total_value}, max rate: {self.max_rate}')
+            print(f'Entry at index {i} (timestamp: {self.history[i][0]}, value: {self.history[i][1]}) does not free up enough capacity. Total value after this entry: {total_value}, max rate: {self.max_rate}')
 
-        logger.error('Unreachable state reached in _time_until_available method.')
+        print('Unreachable state reached in _time_until_available method.')
         raise RuntimeError('Unreachable state reached in _time_until_available method.')
 
     async def acquire(self, value: int = 1):
         if value > self.max_rate:
-            logger.error(f'Requested value {value} exceeds the limiter capacity of {self.max_rate}.')
+            print(f'Requested value {value} exceeds the limiter capacity of {self.max_rate}.')
             raise ValueError('Requested value exceeds limiter capacity.')
 
         while True:
@@ -55,11 +52,25 @@ class RateLimiter:
                 if self.current_value + value <= self.max_rate:
                     self.current_value += value
                     self.history.append((now, value))
-                    logger.info(f'Rate limit acquired for value {value}. Current value: {self.current_value}')
+                    print(f'Rate limit acquired for value {value}. Current value: {self.current_value}')
                     return
 
                 wait: float = self._time_until_available(now, value)
-                logger.info(f'Rate limit not available for value {value}. Need to wait for {wait} seconds before retrying.')
+                print(f'Rate limit not available for value {value}. Need to wait for {wait} seconds before retrying.')
 
             # Lock released while sleeping
             await asyncio.sleep(wait)
+
+
+async def main():
+    rate_limiter = RateLimiter(max_rate=5, time_window=10.0)  # Example: max 5 requests per 10 seconds
+
+    async def make_request(request_id: int):
+        await rate_limiter.acquire()
+        print(f'Request {request_id} is being processed.')
+
+    tasks = [make_request(i) for i in range(11)]  # Simulate 10 requests
+    await asyncio.gather(*tasks)
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -10,7 +10,7 @@ logger: Logger = get_global_logger(__name__)
 
 mcp_server = FastMCP(
     name='dependency-sentinel',
-    host=services['mcp-server']['host'],
+    host=services['mcp-server']['bind_host'],
     port=services['mcp-server']['port'],
 )
 

@@ -112,15 +112,15 @@ def commit_and_push_changes(repository_path: Path) -> None:
     repo.git.add(A=True)  # Stage all changes
     repo.index.commit('Update manifest files')
     current_branch = repo.active_branch.name
-    
+
     github_access_token = os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')
-    remote_url = repo.remotes.origin.url
+    remote_url = repo.remotes.origin.url.replace('www.github.com', 'github.com') # we remove the 'www' prefix because it can cause issues with authentication (github am i right ??, billion dollar company)
     if remote_url.startswith('https://') and '@' not in remote_url and github_access_token:
-        auth_url = remote_url.replace('https://', f'https://{github_access_token}@')
+        auth_url = remote_url.replace('https://', f'https://{github_access_token}:@')
         repo.git.push(auth_url, f'{current_branch}:{current_branch}')
     else:
-        repo.git.push('-u', 'origin', current_branch)
-        
+        repo.git.push('origin', current_branch)
+
     logger.info(f"Changes committed and pushed for repository at '{repository_path}' on branch '{current_branch}'.")
 
 def create_pull_request(

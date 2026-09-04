@@ -2,16 +2,22 @@ FROM python:3.12-slim
 
 RUN pip install uv
 ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Copier la configuration globale du workspace
-COPY pyproject.toml uv.lock ./
-# Copier les librairies partagees
+COPY pyproject.toml .
+COPY .python-version .
+COPY README.md .
+COPY .env .
+
+ARG DIR_NAME="repository_scanner_service"
+ARG SERVICE_NAME="repository-scanner-service"
+ENV SERVICE_NAME=${SERVICE_NAME}
+
 COPY libs/ libs/
-# Copier uniquement le code de ce service
-COPY services/repository_scanner_service/ services/repository_scanner_service/
+COPY services/${DIR_NAME}/ services/${DIR_NAME}/
 
-# Installer uniquement les dependances necessaires a ce service
-RUN uv sync --package repository-scanner-service
+RUN uv sync --all-packages
 
-ENTRYPOINT ["uv", "run", "--package", "repository-scanner-service", "repository-scanner-service"]
+ENTRYPOINT ["sh", "-c", "uv run ${SERVICE_NAME}"]

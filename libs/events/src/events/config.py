@@ -4,7 +4,7 @@ class KafkaConfig:
     """Configuration des topics et brokers Kafka"""
     
     #  Kafka server address
-    BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+    BOOTSTRAP_SERVERS = f'{os.getenv("KAFKA_INTERNAL_HOST")}:{os.getenv("KAFKA_INTERNAL_PORT")}' if os.getenv("USE_DOCKER") == 'true' else f'{os.getenv("KAFKA_LOOPBACK_HOST")}:{os.getenv("KAFKA_LOOPBACK_PORT")}'
 
     # Topics
     TOPIC_SCAN_STARTED       = "topic-scan-started"

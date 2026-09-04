@@ -1,20 +1,10 @@
-x-common-env:
-  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-  BIND_HOST: 0.0.0.0
-  SCHEDULER_HOST: scheduler
-  GATEWAY_HOST: gateway
-  REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-  REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-  LLM_SERVICE_HOST: llm-service
-  REGISTRY_SERVICE_HOST: registry-service
-  MCP_SERVER_HOST: mcp-server
-  SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
 services:
+  # service kafka:
   kafka:
     image: confluentinc/cp-kafka:7.8.3
     container_name: kafka
     ports:
-    - 9092:9092
+      - "${KAFKA_LOOPBACK_PORT}:${KAFKA_LOOPBACK_PORT}"
     environment:
       KAFKA_KRAFT_MODE: 'true'
       CLUSTER_ID: 1L6g7nGhU-eAKfL--X25wo
@@ -22,10 +12,10 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_LISTENERS: PLAINTEXT://:9092,PLAINTEXT_INTERNAL://:29092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENERS: PLAINTEXT://:${KAFKA_LOOPBACK_PORT},PLAINTEXT_INTERNAL://:${KAFKA_INTERNAL_PORT},CONTROLLER://:${KAFKA_CONTROLLER_PORT}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${KAFKA_LOOPBACK_HOST}:${KAFKA_LOOPBACK_PORT},PLAINTEXT_INTERNAL://${KAFKA_INTERNAL_HOST}:${KAFKA_INTERNAL_PORT}
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:${KAFKA_CONTROLLER_PORT}
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -38,15 +28,18 @@ services:
     networks:
     - dependency-network
     healthcheck:
+    # this healthcheck could be improved
       test:
-      - CMD
-      - nc
-      - -z
-      - localhost
-      - '9092'
+        - CMD
+        - nc
+        - -z
+        - localhost
+        - '9092'
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # service kafka-ui:
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -55,241 +48,152 @@ services:
         condition: service_healthy
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: ${KAFKA_INTERNAL_HOST}:${KAFKA_INTERNAL_PORT}
     ports:
-    - 8081:8080
+      - "8081:8080"
     networks:
-    - dependency-network
+      - dependency-network
+
+  # service scheduler:
   scheduler:
     build:
       context: .
       dockerfile: services/scheduler/Dockerfile
     container_name: scheduler
-    command:
-    - scheduler
-    - scheduler
     ports:
-    - 8000:8000
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      BIND_HOST: 0.0.0.0
-      SCHEDULER_HOST: scheduler
-      GATEWAY_HOST: gateway
-      REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-      REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-      LLM_SERVICE_HOST: llm-service
-      REGISTRY_SERVICE_HOST: registry-service
-      MCP_SERVER_HOST: mcp-server
-      SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+      - "${SCHEDULER_PORT}:${SCHEDULER_PORT}"
     env_file:
-    - .env
+      - .env
     networks:
-    - dependency-network
+      - dependency-network
     depends_on:
       kafka:
         condition: service_healthy
+
+  # service gateway:
   gateway:
     build:
       context: .
       dockerfile: services/gateway/Dockerfile
     container_name: gateway
-    command:
-    - gateway
-    - gateway
     ports:
-    - 8001:8001
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      BIND_HOST: 0.0.0.0
-      SCHEDULER_HOST: scheduler
-      GATEWAY_HOST: gateway
-      REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-      REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-      LLM_SERVICE_HOST: llm-service
-      REGISTRY_SERVICE_HOST: registry-service
-      MCP_SERVER_HOST: mcp-server
-      SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+      - "${GATEWAY_PORT}:${GATEWAY_PORT}"
     env_file:
-    - .env
+      - .env
     networks:
-    - dependency-network
+      - dependency-network
     depends_on:
       scheduler:
         condition: service_started
+
+  # service repository-storage-service:
   repository-storage-service:
     build:
       context: .
       dockerfile: services/repository_storage_service/Dockerfile
     container_name: repository-storage-service
-    command:
-    - repository-storage-service
-    - repository-storage-service
     ports:
-    - 8002:8002
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      BIND_HOST: 0.0.0.0
-      SCHEDULER_HOST: scheduler
-      GATEWAY_HOST: gateway
-      REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-      REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-      LLM_SERVICE_HOST: llm-service
-      REGISTRY_SERVICE_HOST: registry-service
-      MCP_SERVER_HOST: mcp-server
-      SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+      - "${REPOSITORY_STORAGE_SERVICE_PORT}:${REPOSITORY_STORAGE_SERVICE_PORT}"
     env_file:
-    - .env
+      - .env
+      - services/repository_storage_service/.env
     networks:
-    - dependency-network
+      - dependency-network
     depends_on:
       kafka:
         condition: service_healthy
+
+  # service repository-scanner-service:
   repository-scanner-service:
     build:
       context: .
       dockerfile: services/repository_scanner_service/Dockerfile
     container_name: repository-scanner-service
-    command:
-    - repository-scanner-service
-    - repository-scanner-service
     ports:
-    - 8003:8003
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      BIND_HOST: 0.0.0.0
-      SCHEDULER_HOST: scheduler
-      GATEWAY_HOST: gateway
-      REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-      REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-      LLM_SERVICE_HOST: llm-service
-      REGISTRY_SERVICE_HOST: registry-service
-      MCP_SERVER_HOST: mcp-server
-      SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+      - "${REPOSITORY_SCANNER_SERVICE_PORT}:${REPOSITORY_SCANNER_SERVICE_PORT}"
     env_file:
-    - .env
+      - .env
     networks:
-    - dependency-network
+      - dependency-network
     depends_on:
       kafka:
         condition: service_healthy
+
+  # service llm-service:
   llm-service:
     build:
       context: .
       dockerfile: services/llm_service/Dockerfile
     container_name: llm-service
-    command:
-    - llm-service
-    - llm-service
     ports:
-    - 8004:8004
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      BIND_HOST: 0.0.0.0
-      SCHEDULER_HOST: scheduler
-      GATEWAY_HOST: gateway
-      REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-      REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-      LLM_SERVICE_HOST: llm-service
-      REGISTRY_SERVICE_HOST: registry-service
-      MCP_SERVER_HOST: mcp-server
-      SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+      - "${LLM_SERVICE_PORT}:${LLM_SERVICE_PORT}"
     env_file:
-    - .env
+      - .env
+      - services/llm_service/.env
     networks:
-    - dependency-network
+      - dependency-network
+    extra_hosts:
+      - "${LOCAL_OLLAMA_DOCKER_HOST}:host-gateway"
     depends_on:
       mcp-server:
         condition: service_started
       kafka:
         condition: service_healthy
+
+  # service registry-service:
   registry-service:
     build:
       context: .
       dockerfile: services/registry_service/Dockerfile
     container_name: registry-service
-    command:
-    - registry-service
-    - registry-service
     ports:
-    - 8008:8005
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      BIND_HOST: 0.0.0.0
-      SCHEDULER_HOST: scheduler
-      GATEWAY_HOST: gateway
-      REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-      REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-      LLM_SERVICE_HOST: llm-service
-      REGISTRY_SERVICE_HOST: registry-service
-      MCP_SERVER_HOST: mcp-server
-      SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+      - "${REGISTRY_SERVICE_PORT}:${REGISTRY_SERVICE_PORT}"
     env_file:
-    - .env
+      - .env
+      - services/registry_service/.env
     networks:
-    - dependency-network
+      - dependency-network
     depends_on:
       kafka:
         condition: service_healthy
+
+  # service mcp-server:
   mcp-server:
     build:
       context: .
-      dockerfile: services/mcp-server/Dockerfile
+      dockerfile: services/mcp_server/Dockerfile
     container_name: mcp-server
-    command:
-    - mcp-server
-    - mcp-server
     ports:
-    - 8006:8006
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      BIND_HOST: 0.0.0.0
-      SCHEDULER_HOST: scheduler
-      GATEWAY_HOST: gateway
-      REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-      REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-      LLM_SERVICE_HOST: llm-service
-      REGISTRY_SERVICE_HOST: registry-service
-      MCP_SERVER_HOST: mcp-server
-      SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+      - "${MCP_SERVER_PORT}:${MCP_SERVER_PORT}"
     env_file:
-    - .env
+      - .env
     networks:
-    - dependency-network
+      - dependency-network
     depends_on:
       kafka:
         condition: service_healthy
+
+  # service security-intelligence-service:
   security-intelligence-service:
     build:
       context: .
       dockerfile: services/security_intelligence_service/Dockerfile
     container_name: security-intelligence-service
-    command:
-    - security-intelligence-service
-    - security-intelligence-service
     ports:
-    - 8007:8007
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      BIND_HOST: 0.0.0.0
-      SCHEDULER_HOST: scheduler
-      GATEWAY_HOST: gateway
-      REPOSITORY_STORAGE_SERVICE_HOST: repository-storage-service
-      REPOSITORY_SCANNER_SERVICE_HOST: repository-scanner-service
-      LLM_SERVICE_HOST: llm-service
-      REGISTRY_SERVICE_HOST: registry-service
-      MCP_SERVER_HOST: mcp-server
-      SECURITY_INTELLIGENCE_SERVICE_HOST: security-intelligence-service
+      - "${SECURITY_INTELLIGENCE_SERVICE_PORT}:${SECURITY_INTELLIGENCE_SERVICE_PORT}"
     env_file:
-    - .env
+      - .env
     networks:
-    - dependency-network
+      - dependency-network
     depends_on:
       llm-service:
         condition: service_started
       kafka:
         condition: service_healthy
+
 volumes:
   kafka_data: null
+
 networks:
   dependency-network:
     driver: bridge
