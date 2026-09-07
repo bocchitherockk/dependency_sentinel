@@ -58,11 +58,11 @@ class SecurityRegistry:
         vulns = response.json().get('vulns', [])
         result: list[VulnerabilityItem] = [
             VulnerabilityItem(
-                id=vuln['id'],
-                summary=vuln['summary'],
-                details=vuln['details'],
-                severity=vuln['database_specific']['severity'],
-                aliases=vuln['aliases'],
+                id=vuln['id'], # id is always present in the response by the OSV.dev service, the other fields are optional and may not be present in the response so we use the get method to avoid KeyError exceptions
+                summary=vuln.get('summary'),
+                details=vuln.get('details'),
+                severity=vuln.get('database_specific', {}).get('severity'),
+                aliases=vuln.get('aliases'),
             )
             for vuln in vulns
         ]
