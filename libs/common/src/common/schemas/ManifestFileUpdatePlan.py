@@ -1,6 +1,6 @@
 from logging import Logger
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from common.logging.global_logger import get_global_logger
 from common.schemas.DependencyUpdatePlan import DependencyUpdatePlan
@@ -9,8 +9,8 @@ logger: Logger = get_global_logger(__name__)
 
 class ManifestFileUpdatePlan(BaseModel):
     manifest_file_path: str
-    dependencies_updates:     list[DependencyUpdatePlan] = Field(default_factory=list)
-    dev_dependencies_updates: list[DependencyUpdatePlan] = Field(default_factory=list)
+    dependencies_updates:     list[DependencyUpdatePlan]
+    dev_dependencies_updates: list[DependencyUpdatePlan]
 
     def remove_unnecessary_update_elements(self) -> None:
         new_dependencies_updates: list[DependencyUpdatePlan] = []

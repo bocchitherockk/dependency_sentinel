@@ -5,6 +5,7 @@ from common.logging.global_logger import get_global_logger
 from llm_service.llm_clients.llm_client import LLMClient
 from llm_service.llm_clients.ollama_client import OllamaClient
 from llm_service.llm_clients.gemini_client import GeminiClient
+from llm_service.llm_clients.groq_client import GroqClient
 
 logger: Logger = get_global_logger(__name__)
 
@@ -16,6 +17,7 @@ class LLMSelector:
         'gemini-3.5-flash':      GeminiClient('gemini-3.5-flash'),
         'gemini-3.5-flash-lite': GeminiClient('gemini-3.5-flash-lite'),
         'gemini-3.6-flash':      GeminiClient('gemini-3.6-flash'),
+        'openai/gpt-oss-120b':   GroqClient('openai/gpt-oss-120b'),
         'default':               OllamaClient('qwen2.5-coder:1.5b'),
     }
 

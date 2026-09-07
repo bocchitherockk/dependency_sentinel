@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 from pathlib import Path
 
 from common.schemas.File import File
@@ -8,7 +8,7 @@ from common.schemas.File import File
 class Directory(BaseModel):
     path: Path
     name: str
-    children: list[Directory | File] = Field(default_factory=list)
+    children: list[Directory | File]
 
     @model_validator(mode='after')
     def validate_unique_children(self):

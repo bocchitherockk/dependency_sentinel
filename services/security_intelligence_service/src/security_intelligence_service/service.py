@@ -105,6 +105,7 @@ async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpd
             f"{services['llm-service']['endpoint']}/update-manifest",
             # params={ 'model_name': 'qwen2.5-coder:1.5b' },
             params={ 'model_name': 'gemini-3.5-flash-lite' },
+            # params={ 'model_name': 'openai/gpt-oss-120b' },
             json=update_manifest_request.model_dump(mode='json'),
         )
 

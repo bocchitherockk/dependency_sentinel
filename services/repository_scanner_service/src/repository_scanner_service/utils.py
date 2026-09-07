@@ -41,6 +41,7 @@ async def _detect_manifest_files(flattened_repository_files: list[File]) -> list
             batch = flattened_repository_files[batch_index : (batch_index + BATCH_SIZE)]
             # params = { 'model_name': 'qwen3:8b' }
             params = { 'model_name': 'gemini-3.5-flash-lite' }
+            # params = { 'model_name': 'openai/gpt-oss-120b' }
             body = [flattened_repository_file.model_dump(mode='json') for flattened_repository_file in batch]
 
             logger.info(f"Detecting manifest files: batch (number = {batch_index + 1}/{total_batches}) (size = {len(batch)}) (model = {params['model_name']}).")
@@ -99,6 +100,7 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
             # params = { 'model_name': 'qwen2.5-coder:1.5b' }
             # params = { 'model_name': 'qwen3:8b' }
             params = { 'model_name': 'gemini-3.5-flash-lite' }
+            # params = { 'model_name': 'openai/gpt-oss-120b' }
             body = manifest_file.model_dump(mode='json')
             logger.info(f"Extracting dependencies from manifest file '{manifest_file.path}' (model = {params['model_name']}).")
             logger.debug(f'Manifest file: {body}')

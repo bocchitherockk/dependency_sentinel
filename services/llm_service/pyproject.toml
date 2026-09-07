@@ -12,6 +12,7 @@ dependencies = [
     "google-genai>=2.14.0",
     "python-dotenv>=1.2.2",
     "fastmcp>=3.4.7",
+    "groq>=1.7.0",
 ]
 
 [tool.uv.sources]
