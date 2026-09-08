@@ -66,8 +66,18 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
+        async def limit_redirects(response):
+            if response.is_redirect:
+                logger.info(f"Received redirect response for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+                logger.debug(f'Original URL: {response.request.url}, Redirected URL: {response.headers.get("location")}')
+                await LibrariesIORegistryAdapter.rate_limiter.acquire()
+
         await LibrariesIORegistryAdapter.rate_limiter.acquire()
-        async with httpx.AsyncClient(timeout=None) as client:
+        async with httpx.AsyncClient(
+            timeout=None,
+            follow_redirects=True,
+            event_hooks={'response': [limit_redirects]},
+        ) as client:
             response = await client.get(url, params=params)
 
         response.raise_for_status()
@@ -92,8 +102,18 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
+        async def limit_redirects(response):
+            if response.is_redirect:
+                logger.info(f"Received redirect response for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+                logger.debug(f'Original URL: {response.request.url}, Redirected URL: {response.headers.get("location")}')
+                await LibrariesIORegistryAdapter.rate_limiter.acquire()
+
         await LibrariesIORegistryAdapter.rate_limiter.acquire()
-        async with httpx.AsyncClient(timeout=None) as client:
+        async with httpx.AsyncClient(
+            timeout=None,
+            follow_redirects=True,
+            event_hooks={'response': [limit_redirects]},
+        ) as client:
             response = await client.get(url, params=params)
 
         response.raise_for_status()
@@ -119,8 +139,18 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = { 'api_key': LibrariesIORegistryAdapter.api_key } if LibrariesIORegistryAdapter.api_key is not None else {}
 
+        async def limit_redirects(response):
+            if response.is_redirect:
+                logger.info(f"Received redirect response for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+                logger.debug(f'Original URL: {response.request.url}, Redirected URL: {response.headers.get("location")}')
+                await LibrariesIORegistryAdapter.rate_limiter.acquire()
+
         await LibrariesIORegistryAdapter.rate_limiter.acquire()
-        async with httpx.AsyncClient(timeout=None) as client:
+        async with httpx.AsyncClient(
+            timeout=None,
+            follow_redirects=True,
+            event_hooks={'response': [limit_redirects]},
+        ) as client:
             response = await client.get(url, params=params)
 
         response.raise_for_status()
@@ -168,8 +198,24 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
         params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
 
+        # We follow redirects because the Libraries.io API may redirect to another URL for certain requests
+        # for example, when the dependency name does not exactly match the name in the registry, it needs to be capitalized
+        # the Libraries.io API will redirect to the correct URL for that dependency
+        async def limit_redirects(response):
+            # Check if the response is a redirect status
+            if response.is_redirect:
+                logger.info(f"Received redirect response for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+                logger.debug(f'Original URL: {response.request.url}, Redirected URL: {response.headers.get("location")}')
+                # Make the hook obtain the rate limiter before hitting the redirected URL
+                # because it is a new request and we need to respect the rate limit for it
+                await LibrariesIORegistryAdapter.rate_limiter.acquire()
+
         await LibrariesIORegistryAdapter.rate_limiter.acquire()
-        async with httpx.AsyncClient(timeout=None) as client:
+        async with httpx.AsyncClient(
+            timeout=None,
+            follow_redirects=True,
+            event_hooks={'response': [limit_redirects]},
+        ) as client:
             response = await client.get(url, params=params)
 
         response.raise_for_status()
