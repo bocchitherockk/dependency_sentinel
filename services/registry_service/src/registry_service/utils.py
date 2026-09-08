@@ -14,12 +14,15 @@ from registry_service.security_registry import SecurityRegistry
 
 logger: Logger = get_global_logger(__name__)
 
-async def get_candidate_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency]:
+async def get_candidate_dependencies(dependency: Dependency) -> tuple[Dependency | None, Dependency | None]:
     registry_adapter: BaseRegistryAdapter = RegistrySelector.get_adapter(dependency.registry_name)
-    candidate_versions_dependencies: tuple[Dependency, Dependency] = await registry_adapter.get_candidate_versions_dependencies(dependency)
+    candidate_versions_dependencies: tuple[Dependency | None, Dependency | None] = await registry_adapter.get_candidate_versions_dependencies(dependency)
     return candidate_versions_dependencies
 
-async def get_dependency_security_report(dependency: Dependency) -> DependencySecurityReport:
+async def get_dependency_security_report(dependency: Dependency | None) -> DependencySecurityReport | None:
+    if dependency is None:
+        return None
+
     vulnerabilities = await SecurityRegistry.query_vulnerabilities(dependency)
     return DependencySecurityReport(
         name=dependency.name,

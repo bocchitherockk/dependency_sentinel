@@ -86,7 +86,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
     @override
     @staticmethod
-    async def get_latest_version_dependency(dependency: Dependency) -> Dependency:
+    async def get_latest_version_dependency(dependency: Dependency) -> Dependency | None:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
         corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
@@ -98,7 +98,10 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
         response.raise_for_status()
         data = response.json()
-        latest_stable_release_number: str = data['latest_stable_release_number']
+        latest_stable_release_number: str | None = data['latest_stable_release_number']
+        if latest_stable_release_number is None:
+            logger.warning(f"Latest stable release number is null for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+            return None
 
         latest_version_dependency: Dependency = Dependency(
             name=dependency.name,
@@ -159,7 +162,7 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
     @override
     @staticmethod
-    async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency, Dependency] | None:
+    async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency | None, Dependency | None]:
         safe_dependency_name: str = dependency.name.replace('/', '%2F')
         corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
         url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
@@ -172,22 +175,27 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
         response.raise_for_status()
         data = response.json()
 
-        latest_stable_release_number: str = data['latest_stable_release_number']
         latest_compatible_version_dependency: Dependency | None = None
-        latest_version_dependency: Dependency = Dependency(
-            name=dependency.name,
-            version=latest_stable_release_number,
-            registry_name=dependency.registry_name,
-        )
-        logger.info(f"Latest version for dependency '{dependency.name}' fetched in registry '{corrected_registry_name}' is '{latest_stable_release_number}'.")
+        latest_version_dependency: Dependency | None = None
+
+        # Sometimes `data['latest_stable_release_number']` is null
+        latest_stable_release_number: str | None = data['latest_stable_release_number']
+        if latest_stable_release_number is None:
+            logger.warning(f"Latest stable release number is null for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
+        else:
+            latest_version_dependency: Dependency = Dependency(
+                name=dependency.name,
+                version=latest_stable_release_number,
+                registry_name=dependency.registry_name,
+            )
+            logger.info(f"Latest version for dependency '{dependency.name}' fetched in registry '{corrected_registry_name}' is '{latest_stable_release_number}'.")
 
         try:
             # TODO: this is a quick workaround to get the exact version
             current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
         except ValueError:
-            # In this case, we return None.
             logger.error(f"Invalid Semver for current version '{dependency.version}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
-            return None
+            return latest_compatible_version_dependency, latest_version_dependency
         
         for i in range(len(data['versions']) - 1, -1, -1):
             try:
@@ -219,3 +227,5 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
 
         logger.error(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
         # raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
+
+        return latest_compatible_version_dependency, latest_version_dependency
