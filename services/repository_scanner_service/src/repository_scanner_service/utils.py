@@ -30,8 +30,6 @@ async def _detect_manifest_files(flattened_repository_files: list[File]) -> list
     Send repository files to the LLM Service in small batches.
     Sending hundreds of files in one request may be unreliable.
     """
-    ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
-    ################## ORIGINAL #####################
     async with httpx.AsyncClient(timeout=None) as client:
         # TODO: Consider using a semaphore to limit the number of concurrent requests to the LLM Service
         # because for example 2000 files / 20 = 100 concurrent requests.
@@ -64,36 +62,11 @@ async def _detect_manifest_files(flattened_repository_files: list[File]) -> list
     logger.info(f'Detected {len(result)} manifest files from {len(flattened_repository_files)} repository files.')
     logger.debug(f'Detected manifest files: {[file.path for file in result]}')
     return result
-    ################## HACK #####################
-    ################## Detect manifest files only one time and then short return #####################
-    # async with httpx.AsyncClient(timeout=None) as client:
-    #     response = await client.post(
-    #         f'{services['llm-service']['endpoint']}/detect-manifests',
-    #         params= {'model_name': 'qwen3:8b'},
-    #         # params= {'model_name': 'qwen2.5-coder:1.5b'},
-    #         json=[flattened_repository_file.model_dump(mode='json') for flattened_repository_file in flattened_repository_files[:BATCH_SIZE]],
-    #     )
-    # response.raise_for_status()
-    # payload = response.json()
-    # result: list[File] = []
-    # for manifest_file in payload:
-    #     result.append(File(**manifest_file))
-    # return result
-    ################## HACK #####################
-    ################## Return ready result without any computation #####################
-    # return [
-    #     File(path="plateform-saas-test/angular/package.json", name="package.json"),
-    #     File(path="plateform-saas-test/notifications-service/pom.xml", name="pom.xml"),
-    #     File(path="plateform-saas-test/orders-service/pom.xml", name="pom.xml"),
-    # ]
-    ################## END #####################
 
 async def _extract_dependencies(detected_manifest_files: list[File]) -> list[ManifestFile]:
     """
     Ask LLM Service to extract dependencies from a manifest file.
     """
-    ################## THIS IS A QUICK HACK TO SAVE TIME OR TEST #####################
-    ################## ORIGINAL #####################
     async with httpx.AsyncClient(timeout=None) as client:
         tasks = []
         for manifest_file in detected_manifest_files:
@@ -123,82 +96,6 @@ async def _extract_dependencies(detected_manifest_files: list[File]) -> list[Man
     logger.info(f'Extracted dependencies from {len(result)} manifest files.')
     logger.debug(f'Extracted dependencies: {result}')
     return result
-    ################## HACK #####################
-    ################## Extract dependencies from only 1 manifest file and then short return #####################
-    # async with httpx.AsyncClient(timeout=None) as client:
-    #     manifest_file = detected_manifest_files[0]
-    #     response = await client.post(
-    #         f'{services['llm-service']['endpoint']}/extract-dependencies',
-    #         params= {'model_name': 'qwen2.5-coder:1.5b'},
-    #         json=manifest_file.model_dump(mode='json'),
-    #     )
-    # result: list[ManifestFile] = []
-    # response.raise_for_status()
-    # result.append(ManifestFile(**response.json()))
-    # return result
-    ################## HACK #####################
-    ################## Return ready result without any computation #####################
-    # from common.schemas.Dependency import Dependency
-
-    # return [
-    #     ManifestFile(
-    #         path='plateform-saas-test/angular/package.json',
-    #         dependencies=[
-    #             Dependency(name='@angular/animations'              , version='^16.1.0' , registry_name='npm'),
-    #             Dependency(name='@angular/common'                  , version='^16.1.0' , registry_name='npm'),
-    #             Dependency(name='@angular/compiler'                , version='^16.1.0' , registry_name='npm'),
-    #             Dependency(name='@angular/core'                    , version='^16.1.0' , registry_name='npm'),
-    #             Dependency(name='@angular/forms'                   , version='^16.1.0' , registry_name='npm'),
-    #             Dependency(name='@angular/platform-browser'        , version='^16.1.0' , registry_name='npm'),
-    #             Dependency(name='@angular/platform-browser-dynamic', version='^16.1.0' , registry_name='npm'),
-    #             Dependency(name='@angular/router'                  , version='^16.1.0' , registry_name='npm'),
-    #             Dependency(name='@fortawesome/fontawesome-free'    , version='^6.4.0'  , registry_name='npm'),
-    #             Dependency(name='@ng-bootstrap/ng-bootstrap'       , version='^15.1.0' , registry_name='npm'),
-    #             Dependency(name='@okta/okta-angular'               , version='^6.2.0'  , registry_name='npm'),
-    #             Dependency(name='@okta/okta-auth-js'               , version='^6.9.0'  , registry_name='npm'),
-    #             Dependency(name='@okta/okta-signin-widget'         , version='^6.2.0'  , registry_name='npm'),
-    #             Dependency(name='@popperjs/core'                   , version='^2.11.6' , registry_name='npm'),
-    #             Dependency(name='bootstrap'                        , version='^5.2.0'  , registry_name='npm'),
-    #             Dependency(name='rxjs'                             , version='~7.8.0'  , registry_name='npm'),
-    #             Dependency(name='stripe'                           , version='^8.179.0', registry_name='npm'),
-    #             Dependency(name='tslib'                            , version='^2.3.0'  , registry_name='npm'),
-    #             Dependency(name='zone.js'                          , version='~0.13.0' , registry_name='npm'),
-    #         ],
-    #         dev_dependencies=[
-    #             Dependency(name='@angular-devkit/build-angular', version='^16.1.4', registry_name='npm'),
-    #             Dependency(name='@angular/cli'                 , version='~16.1.4', registry_name='npm'),
-    #             Dependency(name='@angular/compiler-cli'        , version='^16.1.0', registry_name='npm'),
-    #             Dependency(name='@angular/localize'            , version='^16.1.0', registry_name='npm'),
-    #             Dependency(name='@types/jasmine'               , version='~4.3.0' , registry_name='npm'),
-    #             Dependency(name='jasmine-core'                 , version='~4.6.0' , registry_name='npm'),
-    #             Dependency(name='karma'                        , version='~6.4.0' , registry_name='npm'),
-    #             Dependency(name='karma-chrome-launcher'        , version='~3.2.0' , registry_name='npm'),
-    #             Dependency(name='karma-coverage'               , version='~2.2.0' , registry_name='npm'),
-    #             Dependency(name='karma-jasmine'                , version='~5.1.0' , registry_name='npm'),
-    #             Dependency(name='karma-jasmine-html-reporter'  , version='~2.1.0' , registry_name='npm'),
-    #             Dependency(name='typescript'                   , version='~5.1.3' , registry_name='npm'),
-    #         ]
-    #     ),
-    #     ManifestFile(
-    #         path='plateform-saas-test/notifications-service/pom.xml',
-    #         dependencies=[
-    #             Dependency(name='com.fasterxml.jackson.core:jackson-databind', version='2.15.2', registry_name='maven'),
-    #         ],
-    #         dev_dependencies=[]
-    #     ),
-    #     ManifestFile(
-    #         path='plateform-saas-test/orders-service/pom.xml',
-    #         dependencies=[
-    #             Dependency(name='org.springdoc:springdoc-openapi-starter-webmvc-ui', version='2.0.0'  , registry_name='maven'),
-    #             Dependency(name='com.okta.spring:okta-spring-boot-starter'         , version='3.0.4'  , registry_name='maven'),
-    #             Dependency(name='com.stripe:stripe-java'                           , version='22.28.0', registry_name='maven'),
-    #         ],
-    #         dev_dependencies=[]
-    #     )
-    # ]
-    ################## END #####################
-
-
 
 async def scan_repository(repository_name: str) -> list[ManifestFile]:
     """
