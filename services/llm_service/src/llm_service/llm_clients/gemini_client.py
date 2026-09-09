@@ -7,12 +7,18 @@ import uuid
 from dotenv import load_dotenv
 import fastmcp
 from fastmcp.client.client import CallToolResult
+from mcp.types import Tool
 from google.genai import Client
 from google.genai import types
 
 from common.logging.global_logger import get_global_logger
 from common.rate_limiter.RateLimiter import RateLimiter
+
 from llm_service.llm_clients.llm_client import LLMClient
+from llm_service.exceptions.LLMRequestException import LLMRequestException
+from llm_service.exceptions.ToolCallException import ToolCallException
+from llm_service.exceptions.MCPListToolsException import MCPListToolsException
+
 
 logger: Logger = get_global_logger(__name__)
 
@@ -101,18 +107,28 @@ class GeminiClient(LLMClient):
         logger.info(f'LLM chat request sent to {self.model_name}')
         logger.debug(f'Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
         logger.debug(f'Request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
-        response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
-            model=self.model_name,
-            contents=contents,
-            config=config
-        )
+        try:
+            response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=config
+            )
+        except Exception as error:
+            error_message: str = f"Error during chat request to '{self.model_name}': {str(error)}"
+            logger.error(error_message)
+            raise LLMRequestException(error_message)
         logger.info(f'LLM chat response received from {self.model_name}')
         logger.debug(f'Response data: {json.dumps(response.model_dump(mode="json"), indent=2)}')
 
         if response_format is None:
             return response.text
         else:
-            return json.loads(response.text)
+            try:
+                return json.loads(response.text)
+            except json.JSONDecodeError as error:
+                error_message: str = f"Error decoding JSON response from '{self.model_name}': {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
 
     @override
     async def agent(
@@ -142,7 +158,12 @@ class GeminiClient(LLMClient):
             temperature=temperature,
         )
         if mcp_client is not None:
-            tools_list = await mcp_client.list_tools()
+            try:
+                tools_list: list[Tool] = await mcp_client.list_tools()
+            except Exception as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, model={self.model_name}), Error listing tools from MCP: {str(error)}"
+                logger.error(error_message)
+                raise MCPListToolsException(error_message)
             logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Prepared with tools: {len(tools_list)}')
             logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Tools details: {json.dumps([tool.model_dump(mode="json") for tool in tools_list], indent=2)}')
 
@@ -161,11 +182,16 @@ class GeminiClient(LLMClient):
             logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request sent')
             logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
             logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
-            response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-                config=config
-            )
+            try:
+                response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=config
+                )
+            except Exception as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Error during agent request: {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
             logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Response received')
             logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Response: {json.dumps(response.model_dump(mode="json"), indent=2)}')
 
@@ -197,7 +223,12 @@ class GeminiClient(LLMClient):
 
                     logger.info(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Called tool: '{tool_name}'")
                     logger.debug(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool args: {tool_name} ({tool_args})")
-                    tool_result: CallToolResult = await mcp_client.call_tool(tool_name, tool_args)
+                    try:
+                        tool_result: CallToolResult = await mcp_client.call_tool(tool_name, tool_args)
+                    except Exception as error:
+                        error_message: str = f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Error calling tool '{tool_name}': {str(error)}"
+                        logger.error(error_message)
+                        raise ToolCallException(error_message)
                     logger.info(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool returned: '{tool_name}'")
                     logger.debug(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool result: {tool_name} -> {tool_result.content[0].text}")
 
@@ -235,12 +266,21 @@ class GeminiClient(LLMClient):
             logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request sent')
             logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request contents: {json.dumps([content.model_dump(mode="json") for content in contents], indent=2)}')
             logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request config: {json.dumps(config.model_dump(mode="json"), indent=2)}')
-            response = await self.client.aio.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-                config=config
-            )
-            result = json.loads(response.text)
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=config
+                )
+                result = json.loads(response.text)
+            except json.JSONDecodeError as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, model={self.model_name}), Error decoding structured response during restructure: {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
+            except Exception as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, model={self.model_name}), Error during restructure request: {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
             logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure response received')
             logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure response: {json.dumps(response.model_dump(mode="json"), indent=2)}')
 

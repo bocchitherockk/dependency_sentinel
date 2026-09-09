@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 
 from common.logging.global_logger import get_global_logger
 from llm_service.llm_clients.llm_client import LLMClient
+from llm_service.exceptions.LLMRequestException import LLMRequestException
+from llm_service.exceptions.ToolCallException import ToolCallException
+from llm_service.exceptions.MCPListToolsException import MCPListToolsException
 
 logger: Logger = get_global_logger(__name__)
 
@@ -88,20 +91,34 @@ class OllamaClient(LLMClient):
 
         logger.info(f'LLM chat request sent to {self.model_name}')
         logger.debug(f'LLM chat request body: {json.dumps(body, indent=2)}')
-        async with httpx.AsyncClient(timeout=None) as client:
-            response = await client.post(
-                f'{self.models[self.model_name]["endpoint"]}/api/chat',
-                json=body,
-            )
-        response.raise_for_status()
-        data = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=None) as client:
+                response = await client.post(
+                    f'{self.models[self.model_name]["endpoint"]}/api/chat',
+                    json=body,
+                )
+            response.raise_for_status()
+            data = response.json()
+        except (httpx.RequestError, httpx.HTTPStatusError) as error:
+            error_message: str = f"Error during chat request to '{self.model_name}': {str(error)}"
+            logger.error(error_message)
+            raise LLMRequestException(error_message)
+        except json.JSONDecodeError as error:
+            error_message: str = f"Error decoding JSON response from '{self.model_name}': {str(error)}"
+            logger.error(error_message)
+            raise LLMRequestException(error_message)
         logger.info(f'LLM chat response received from {self.model_name}')
         logger.debug(f'LLM chat response: {json.dumps(data, indent=2)}')
-        
+
         if response_format is None:
             return data['message']['content']
         else:
-            return json.loads(data['message']['content'])
+            try:
+                return json.loads(data['message']['content'])
+            except json.JSONDecodeError as error:
+                error_message: str = f"Error decoding structured response from '{self.model_name}': {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
 
     @override
     async def agent(
@@ -126,7 +143,12 @@ class OllamaClient(LLMClient):
         if OllamaClient.models[self.model_name]['supports_thinking']:
             body['think'] = think
         if mcp_client is not None:
-            tools_list: list[Tool] = await mcp_client.list_tools()
+            try:
+                tools_list: list[Tool] = await mcp_client.list_tools()
+            except Exception as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, model={self.model_name}), Error listing tools from MCP: {str(error)}"
+                logger.error(error_message)
+                raise MCPListToolsException(error_message)
             tools = self.convert_mcp_tools_to_expected_tools_format(tools_list)
             body['tools'] = tools
             logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Prepared with tools: {len(tools)}')
@@ -136,13 +158,22 @@ class OllamaClient(LLMClient):
             loop_count += 1
             logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request sent')
             logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Request body: {json.dumps(body, indent=2)}')
-            async with httpx.AsyncClient(timeout=None) as client:
-                response = await client.post(
-                    f'{self.models[self.model_name]['endpoint']}/api/chat',
-                    json=body,
-                )
-            response.raise_for_status()
-            data = response.json()
+            try:
+                async with httpx.AsyncClient(timeout=None) as client:
+                    response = await client.post(
+                        f'{self.models[self.model_name]['endpoint']}/api/chat',
+                        json=body,
+                    )
+                response.raise_for_status()
+                data = response.json()
+            except (httpx.RequestError, httpx.HTTPStatusError) as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Error during agent request: {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
+            except json.JSONDecodeError as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Error decoding JSON response: {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
             logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Response received')
             logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Response: {json.dumps(data, indent=2)}')
 
@@ -152,7 +183,7 @@ class OllamaClient(LLMClient):
             if not tool_calls:
                 logger.info(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), LLM did not request any tool calls")
                 break
-            
+
             logger.info(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Requested tool calls count: {len(tool_calls)}')
             logger.debug(f'(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Requested tool calls: {json.dumps(tool_calls, indent=2)}')
 
@@ -163,7 +194,12 @@ class OllamaClient(LLMClient):
 
                 logger.info(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Called tool: '{tool_name}'")
                 logger.debug(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool args: {tool_name} ({tool_args})")
-                tool_result: CallToolResult = await mcp_client.call_tool(tool_name, tool_args)
+                try:
+                    tool_result: CallToolResult = await mcp_client.call_tool(tool_name, tool_args)
+                except Exception as error:
+                    error_message: str = f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Error calling tool '{tool_name}': {str(error)}"
+                    logger.error(error_message)
+                    raise ToolCallException(error_message)
                 logger.info(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool returned: '{tool_name}'")
                 logger.debug(f"(agent_loop={agent_loop_id}, loop_count={loop_count}, model={self.model_name}), Tool result: {tool_name} -> {tool_result.content[0].text}")
 
@@ -187,15 +223,29 @@ class OllamaClient(LLMClient):
 
             logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request sent')
             logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure request body: {json.dumps(body, indent=2)}')
-            async with httpx.AsyncClient(timeout=None) as client:
-                response = await client.post(
-                    f'{self.models[self.model_name]['endpoint']}/api/chat',
-                    json=body,
-                )
-            response.raise_for_status()
-            data = response.json()
+            try:
+                async with httpx.AsyncClient(timeout=None) as client:
+                    response = await client.post(
+                        f'{self.models[self.model_name]['endpoint']}/api/chat',
+                        json=body,
+                    )
+                response.raise_for_status()
+                data = response.json()
+            except (httpx.RequestError, httpx.HTTPStatusError) as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, model={self.model_name}), Error during restructure request: {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
+            except json.JSONDecodeError as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, model={self.model_name}), Error decoding JSON response during restructure: {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
             message = data['message']
-            result = json.loads(message['content'])
+            try:
+                result = json.loads(message['content'])
+            except json.JSONDecodeError as error:
+                error_message: str = f"(agent_loop={agent_loop_id}, model={self.model_name}), Error decoding structured response during restructure: {str(error)}"
+                logger.error(error_message)
+                raise LLMRequestException(error_message)
             logger.info(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure response received')
             logger.debug(f'(agent_loop={agent_loop_id}, model={self.model_name}), Restructure response: {json.dumps(data, indent=2)}')
 
