@@ -17,8 +17,8 @@ class RepositoryClonedEventConsumer(EventConsumer):
     def __init__(self, repository_scanned_event_producer: RepositoryScannedEventProducer):
         self.repository_scanned_event_producer: RepositoryScannedEventProducer = repository_scanned_event_producer
         super().__init__(
-            topic=KafkaConfig.TOPIC_MANIFEST_FILES_EDITED,
-            group_id=KafkaConfig.CONSUMER_GROUP_REPOSITORY_STORAGE_SERVICE,
+            topic=KafkaConfig.TOPIC_REPOSITORY_CLONED,
+            group_id=KafkaConfig.CONSUMER_GROUP_REPOSITORY_SCANNER_SERVICE,
             callback=self.handle,
         )
 
