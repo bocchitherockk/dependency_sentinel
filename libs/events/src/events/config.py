@@ -7,7 +7,6 @@ class KafkaConfig:
     BOOTSTRAP_SERVERS = f'{os.getenv("KAFKA_INTERNAL_HOST")}:{os.getenv("KAFKA_INTERNAL_PORT")}' if os.getenv("USE_DOCKER") == 'true' else f'{os.getenv("KAFKA_LOOPBACK_HOST")}:{os.getenv("KAFKA_LOOPBACK_PORT")}'
 
     # Topics
-    TOPIC_SCAN_STARTED       = "topic-scan-started"
     TOPIC_REPOSITORY_CLONED  = "topic-repository-cloned"
     TOPIC_REPOSITORY_SCANNED = "topic-repository-scanned"
     TOPIC_DEPENDENCIES_QUERIED = "topic-dependencies-queried"

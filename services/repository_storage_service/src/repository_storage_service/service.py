@@ -6,16 +6,42 @@ from git import Repo
 from common.logging.global_logger import get_global_logger
 from common.schemas.Directory import Directory
 from common.schemas.File import File
+from common.schemas.CloneRepositoryRequest import CloneRepositoryRequest
 from common.schemas.UpdateFileContentRequest import UpdateFileContentRequest
 from common.schemas.CreateBranchRequest import CreateBranchRequest
+from events.schemas.RepositoryClonedEvent import RepositoryClonedEvent
 
 from repository_storage_service.config import REPOSITORIES_PATH
 from repository_storage_service.utils import (
+    get_repository_name_and_owner_name,
+    clone_repository,
     get_fs_object,
     remove_repository_name_prefix,
 )
+from repository_storage_service.events.RepositoryClonedEventProducer import RepositoryClonedEventProducer
 
 logger: Logger = get_global_logger(__name__)
+
+async def clone_repository_service(
+    clone_repository_request: CloneRepositoryRequest,
+    repository_cloned_event_producer: RepositoryClonedEventProducer,
+) -> None:
+    repository_url: str = clone_repository_request.repository_url
+    repository_owner_name, repository_name = get_repository_name_and_owner_name(repository_url)
+    destination: Path = REPOSITORIES_PATH / repository_name
+
+    default_branch: str = clone_repository(repository_url, destination)
+
+    repository_cloned_event: RepositoryClonedEvent = RepositoryClonedEvent(
+        key=repository_name,
+        repository_url=repository_url,
+        repository_name=repository_name,
+        repository_owner_name=repository_owner_name,
+        default_branch=default_branch,
+    )
+    logger.info(f'Publishing RepositoryClonedEvent for repository: {repository_name}')
+    logger.debug(f'RepositoryClonedEvent details: {repository_cloned_event}')
+    await repository_cloned_event_producer.publish(event=repository_cloned_event)
 
 def get_fs_object_service(
     path: str,

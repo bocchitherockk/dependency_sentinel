@@ -7,19 +7,21 @@ import fastapi
 from fastapi import FastAPI, HTTPException
 
 from common.logging.global_logger import get_global_logger
+from common.schemas.CloneRepositoryRequest import CloneRepositoryRequest
 from common.schemas.CreateBranchRequest import CreateBranchRequest
 from common.schemas.UpdateFileContentRequest import UpdateFileContentRequest
 from common.schemas.Directory import Directory
 from common.schemas.File import File
+from events.schemas.RepositoryClonedEvent import RepositoryClonedEvent
 
 from repository_storage_service.config import REPOSITORIES_PATH
 from repository_storage_service.service import (
+    clone_repository_service,
     get_fs_object_service,
     update_file_content_service,
     create_branch_service,
 )
 from repository_storage_service.events.RepositoryClonedEventProducer import RepositoryClonedEventProducer
-from repository_storage_service.events.ScanStartedEventConsumer import ScanStartedEventConsumer
 from repository_storage_service.events.ScanCompletedEventProducer import ScanCompletedEventProducer
 from repository_storage_service.events.ManifestFilesEditedEventConsumer import ManifestFilesEditedEventConsumer
 
@@ -31,7 +33,6 @@ logger.info(f"Created base path for repositories: '{REPOSITORIES_PATH}'")
 
 
 repository_cloned_event_producer: RepositoryClonedEventProducer = RepositoryClonedEventProducer()
-scan_started_event_consumer: ScanStartedEventConsumer = ScanStartedEventConsumer(repository_cloned_event_producer)
 scan_completed_event_producer: ScanCompletedEventProducer = ScanCompletedEventProducer()
 manifest_files_edited_event_consumer: ManifestFilesEditedEventConsumer = ManifestFilesEditedEventConsumer(scan_completed_event_producer)
 
@@ -39,23 +40,17 @@ manifest_files_edited_event_consumer: ManifestFilesEditedEventConsumer = Manifes
 async def lifespan(app: FastAPI):
     """Gère le cycle de vie du service"""
     await repository_cloned_event_producer.start()
-    await scan_started_event_consumer.start()
     await scan_completed_event_producer.start()
     await manifest_files_edited_event_consumer.start()
 
-    scan_started_event_consumer_task = asyncio.create_task(
-        scan_started_event_consumer.consume()
-    )
     manifest_files_edited_event_consumer_task = asyncio.create_task(
         manifest_files_edited_event_consumer.consume()
     )
 
     yield
 
-    scan_started_event_consumer_task.cancel()
     manifest_files_edited_event_consumer_task.cancel()
     await repository_cloned_event_producer.stop()
-    await scan_started_event_consumer.stop()
     await scan_completed_event_producer.stop()
     await manifest_files_edited_event_consumer.stop()
 
@@ -66,6 +61,24 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+@app.post('/clone-repository')
+async def clone_repository_endpoint(
+    clone_repository_request: CloneRepositoryRequest = fastapi.Body(...),
+) -> dict[str, str]:
+    try:
+        await clone_repository_service(clone_repository_request, repository_cloned_event_producer)
+        return {
+            'status': 'accepted',
+            'message': f'Scan process started for repository: {clone_repository_request.repository_url}',
+            'repository_url': clone_repository_request.repository_url
+        }
+    except Exception as error:
+        logger.error(f"Error while cloning repository: {str(error)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clone repository: {str(error)}"
+        )
 
 @app.get('/repositories/{path:path}')
 def get_fs_object_endpoint(
