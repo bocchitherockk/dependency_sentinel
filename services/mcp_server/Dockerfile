@@ -9,7 +9,6 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY .python-version .
 COPY README.md .
-COPY .env .
 
 ARG DIR_NAME="mcp_server"
 ARG SERVICE_NAME="mcp-server"

@@ -1,47 +1,61 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Body, Query
 from fastapi import HTTPException
 
-from llm_service.llm_selector import LLMSelector
-
-from common.schemas.File import File
-from common.schemas.ManifestFile import ManifestFile
 from common.schemas.DependencyUpdateContext import DependencyUpdateContext
 from common.schemas.DependencyUpdatePlan import DependencyUpdatePlan
 from common.schemas.UpdateManifestRequest import UpdateManifestRequest
 
+from llm_service.llm_selector import LLMSelector
+from llm_service.events.ManifestFilesDetectedEventProducer import ManifestFilesDetectedEventProducer
+from llm_service.events.RepositoryFilesListRetrievedEventConsumer import RepositoryFilesListRetrievedEventConsumer
+from llm_service.events.DependenciesExtractedEventProducer import DependenciesExtractedEventProducer
+from llm_service.events.ManifestFilesContentRetrievedEventConsumer import ManifestFilesContentRetrievedEventConsumer
 from llm_service.exceptions.LLMModelNotFoundException import LLMModelNotFoundException
 from llm_service.exceptions.LLMRequestException import LLMRequestException
 from llm_service.exceptions.ToolCallException import ToolCallException
 from llm_service.exceptions.MCPListToolsException import MCPListToolsException
 
-app = FastAPI()
+
+manifest_files_detected_event_producer: ManifestFilesDetectedEventProducer = ManifestFilesDetectedEventProducer()
+repository_files_list_retrieved_event_consumer: RepositoryFilesListRetrievedEventConsumer = RepositoryFilesListRetrievedEventConsumer(manifest_files_detected_event_producer)
+dependencies_extracted_event_producer: DependenciesExtractedEventProducer = DependenciesExtractedEventProducer()
+manifest_files_content_retrieved_event_consumer: ManifestFilesContentRetrievedEventConsumer = ManifestFilesContentRetrievedEventConsumer(dependencies_extracted_event_producer)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await manifest_files_detected_event_producer.start()
+    await repository_files_list_retrieved_event_consumer.start()
+    await dependencies_extracted_event_producer.start()
+    await manifest_files_content_retrieved_event_consumer.start()
+
+    repository_files_list_retrieved_event_consumer_task = asyncio.create_task(
+        repository_files_list_retrieved_event_consumer.consume()
+    )
+    manifest_files_content_retrieved_event_consumer_task = asyncio.create_task(
+        manifest_files_content_retrieved_event_consumer.consume()
+    )
+
+    yield
+
+    repository_files_list_retrieved_event_consumer_task.cancel()
+    manifest_files_content_retrieved_event_consumer_task.cancel()
+
+    await manifest_files_detected_event_producer.stop()
+    await repository_files_list_retrieved_event_consumer.stop()
+    await dependencies_extracted_event_producer.stop()
+    await manifest_files_content_retrieved_event_consumer.stop()
 
 
-@app.post("/detect-manifests")
-async def detect_manifests(
-    files: list[File] = Body(...),
-    model_name: str | None = Query(None)
-) -> list[File]:
-    try:
-        model = LLMSelector.get_llm_model(model_name)
-        return await model.detect_manifests(files)
-    except LLMModelNotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except (LLMRequestException, ToolCallException, MCPListToolsException) as e:
-        raise HTTPException(status_code=500, detail=str(e))
+app = FastAPI(
+    title='LLM Service',
+    description='Service responsible for interacting with LLM models',
+    version='0.1.0',
+    lifespan=lifespan,
+)
 
-@app.post("/extract-dependencies")
-async def extract_dependencies(
-    manifest_file: File = Body(...),
-    model_name: str | None = Query(None)
-) -> ManifestFile | None:
-    try:
-        model = LLMSelector.get_llm_model(model_name)
-        return await model.extract_dependencies(manifest_file)
-    except LLMModelNotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except (LLMRequestException, ToolCallException, MCPListToolsException) as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/get-update-plan")
 async def get_update_plan(

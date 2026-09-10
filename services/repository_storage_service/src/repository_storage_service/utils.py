@@ -3,12 +3,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from git import Repo
-from github import Github
-from dotenv import load_dotenv
 
 from common.logging.global_logger import get_global_logger
 from common.schemas.Directory import Directory
 from common.schemas.File import File
+
+from repository_storage_service.config import REPOSITORIES_PATH
 
 logger: Logger = get_global_logger(__name__)
 
@@ -82,3 +82,23 @@ def clone_repository(repository_url: str, destination: Path) -> str:
         logger.info(f"Repository at '{destination}' updated successfully. Default branch: {default_branch}")
 
     return default_branch  # Return the default branch name for further use (e.g., creating a pull request)
+
+def flatten_repository_tree(node: Directory | File) -> list[File]:
+    if isinstance(node, File):
+        return [node]
+    elif isinstance(node, Directory):
+        files: list[File] = []
+        for child in node.children:
+            child_files: list[File] = flatten_repository_tree(child)
+            files.extend(child_files)
+        return files
+
+def retrieve_manifest_files_content(manifest_files: list[File]) -> list[File]:
+    result: list[File] = []
+    for manifest_file in manifest_files:
+        manifest_file_with_content: File = get_fs_object(REPOSITORIES_PATH / manifest_file.path, display_files_content=True)
+        manifest_file_with_content = remove_repository_name_prefix(manifest_file_with_content, REPOSITORIES_PATH)
+        result.append(manifest_file_with_content)
+        logger.info(f'Retrieved content for manifest file: {manifest_file.path}')
+        logger.debug(f'Manifest file content: {manifest_file_with_content.content}')
+    return result

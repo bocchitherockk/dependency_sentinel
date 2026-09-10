@@ -14,7 +14,6 @@ logger.debug(f'    USE_DOCKER:                         {os.getenv("USE_DOCKER")}
 logger.debug(f'    SCHEDULER_PORT:                     {os.getenv("SCHEDULER_PORT")}')
 logger.debug(f'    GATEWAY_PORT:                       {os.getenv("GATEWAY_PORT")}')
 logger.debug(f'    REPOSITORY_STORAGE_SERVICE_PORT:    {os.getenv("REPOSITORY_STORAGE_SERVICE_PORT")}')
-logger.debug(f'    REPOSITORY_SCANNER_SERVICE_PORT:    {os.getenv("REPOSITORY_SCANNER_SERVICE_PORT")}')
 logger.debug(f'    LLM_SERVICE_PORT:                   {os.getenv("LLM_SERVICE_PORT")}')
 logger.debug(f'    REGISTRY_SERVICE_PORT:              {os.getenv("REGISTRY_SERVICE_PORT")}')
 logger.debug(f'    MCP_SERVER_PORT:                    {os.getenv("MCP_SERVER_PORT")}')
@@ -41,13 +40,6 @@ services = {
         'docker_host': 'repository-storage-service',
         'loopback_host': '127.0.0.1',
         'port': int(os.getenv('REPOSITORY_STORAGE_SERVICE_PORT')),
-        'endpoint': None,
-    },
-    'repository-scanner-service': {
-        'bind_host': '0.0.0.0',
-        'docker_host': 'repository-scanner-service',
-        'loopback_host': '127.0.0.1',
-        'port': int(os.getenv('REPOSITORY_SCANNER_SERVICE_PORT')),
         'endpoint': None,
     },
     'llm-service': {

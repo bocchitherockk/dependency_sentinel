@@ -7,28 +7,28 @@ from fastapi import FastAPI, HTTPException
 from common.logging.global_logger import get_global_logger
 
 from registry_service.events.DependenciesQueriedEventProducer import DependenciesQueriedEventProducer
-from registry_service.events.RepositoryScannedEventConsumer import RepositoryScannedEventConsumer
+from registry_service.events.DependenciesExtractedEventConsumer import DependenciesExtractedEventConsumer
 from registry_service.service import get_supported_registries_service
 
 
 logger: Logger = get_global_logger(__name__)
 
 dependencies_queried_event_producer: DependenciesQueriedEventProducer = DependenciesQueriedEventProducer()
-repository_scanned_event_consumer: RepositoryScannedEventConsumer = RepositoryScannedEventConsumer(dependencies_queried_event_producer)
+dependencies_extracted_event_consumer: DependenciesExtractedEventConsumer = DependenciesExtractedEventConsumer(dependencies_queried_event_producer)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await dependencies_queried_event_producer.start()
-    await repository_scanned_event_consumer.start()
-    repository_scanned_event_consumer_task = asyncio.create_task(
-        repository_scanned_event_consumer.consume()
+    await dependencies_extracted_event_consumer.start()
+    dependencies_extracted_event_consumer_task = asyncio.create_task(
+        dependencies_extracted_event_consumer.consume()
     )
 
     yield
 
-    repository_scanned_event_consumer_task.cancel()
+    dependencies_extracted_event_consumer_task.cancel()
     await dependencies_queried_event_producer.stop()
-    await repository_scanned_event_consumer.stop()
+    await dependencies_extracted_event_consumer.stop()
 
 
 app = FastAPI(
