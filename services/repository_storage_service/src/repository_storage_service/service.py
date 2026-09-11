@@ -1,36 +1,54 @@
 from logging import Logger
 from pathlib import Path
 
-from git import Repo
-
 from common.logging.global_logger import get_global_logger
 from common.schemas.Directory import Directory
 from common.schemas.File import File
+from common.schemas.StartScanRequest import StartScanRequest
 from common.schemas.UpdateFileContentRequest import UpdateFileContentRequest
-from common.schemas.CreateBranchRequest import CreateBranchRequest
+from events.schemas.RepositoryFilesListRetrievedEvent import RepositoryFilesListRetrievedEvent
 
 from repository_storage_service.config import REPOSITORIES_PATH
 from repository_storage_service.utils import (
+    get_repository_name_and_owner_name,
+    clone_repository,
     get_fs_object,
     remove_repository_name_prefix,
+    flatten_repository_tree,
 )
+from repository_storage_service.events.RepositoryFilesListRetrievedEventProducer import RepositoryFilesListRetrievedEventProducer
 
 logger: Logger = get_global_logger(__name__)
 
-def get_fs_object_service(
-    path: str,
-    display_files_content: bool,
-) -> Directory | File:
-    fs_object_path: Path = REPOSITORIES_PATH / path
-    if not fs_object_path.exists():
-        error_message: str = f"Filesystem object '{path}' does not exist."
-        logger.error(error_message)
-        raise FileNotFoundError(error_message)
+async def start_scan_service(
+    start_scan_request: StartScanRequest,
+    repository_files_list_retrieved_event_producer: RepositoryFilesListRetrievedEventProducer,
+) -> None:
+    try:
+        repository_url: str = start_scan_request.repository_url
+        repository_owner_name, repository_name = get_repository_name_and_owner_name(repository_url)
+        destination: Path = REPOSITORIES_PATH / repository_name
 
-    fs_object: Directory | File = get_fs_object(fs_object_path, display_files_content)
-    logger.info(f"Retrieved filesystem object '{path}' with display_files_content={display_files_content}.")
-    logger.debug(f"Filesystem object details: {fs_object.model_dump_json(indent=2)}")
-    return remove_repository_name_prefix(fs_object, REPOSITORIES_PATH)
+        default_branch: str = clone_repository(repository_url, destination)
+        repository_content: Directory = get_fs_object(destination, display_files_content=False)
+        repository_content = remove_repository_name_prefix(repository_content, REPOSITORIES_PATH)
+        flattened_repository_files: list[File] = flatten_repository_tree(repository_content)
+
+        repository_files_list_retrieved_event: RepositoryFilesListRetrievedEvent = RepositoryFilesListRetrievedEvent(
+            key=repository_name,
+            repository_url=repository_url,
+            repository_name=repository_name,
+            repository_owner_name=repository_owner_name,
+            default_branch=default_branch,
+            retrieved_repository_files_list=flattened_repository_files,
+        )
+        logger.info(f'Publishing RepositoryFilesListRetrievedEvent for repository: {repository_name}')
+        logger.debug(f'RepositoryFilesListRetrievedEvent details: {repository_files_list_retrieved_event}')
+        await repository_files_list_retrieved_event_producer.publish(event=repository_files_list_retrieved_event)
+    except Exception as e:
+        error_message: str = f"Error while starting scan for repository '{start_scan_request.repository_url}': {str(e)}"
+        logger.error(error_message)
+        raise RuntimeError(error_message) from e
 
 def update_file_content_service(
     path: str,
@@ -56,26 +74,3 @@ def update_file_content_service(
     logger.info(f"Updated file at '{path}'.")
     logger.debug(f"Updated file: {result.model_dump_json(indent=2)}")
     return result
-
-def create_branch_service(
-    create_branch_request: CreateBranchRequest,
-) -> None:
-    repository_name: str = create_branch_request.repository_name
-    # TODO: In here we need to store the repository owner name along with the repository name
-    # because multiple repository owners could have used the same repository name
-    repository_path: Path = REPOSITORIES_PATH / repository_name
-    branch_name: str = create_branch_request.branch_name
-
-    if not repository_path.exists():
-        error_message: str = f"Repository '{repository_path}' does not exist."
-        logger.error(error_message)
-        raise FileNotFoundError(error_message)
-
-    if not branch_name:
-        error_message: str = f"Invalid branch name '{branch_name}' for repository '{repository_name}'."
-        logger.error(error_message)
-        raise ValueError(error_message)
-
-    repo: Repo = Repo(repository_path)
-    repo.git.checkout('HEAD', b=branch_name)
-    logger.info(f"Branch '{branch_name}' created successfully for repository '{repository_name}'.")

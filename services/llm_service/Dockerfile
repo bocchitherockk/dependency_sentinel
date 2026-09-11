@@ -9,7 +9,6 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY .python-version .
 COPY README.md .
-COPY .env .
 
 ARG DIR_NAME="llm_service"
 ARG SERVICE_NAME="llm-service"

@@ -1,10 +1,8 @@
-from fastapi import FastAPI
-import uvicorn
-import httpx
+from fastapi import FastAPI, HTTPException
 
-from common.config import services
 from common.schemas.StartScanRequest import StartScanRequest
 
+from gateway.service import start_scan_service
 
 app = FastAPI(
     title="Gateway Service",
@@ -14,18 +12,7 @@ app = FastAPI(
 
 @app.post('/start-scan')
 async def start_scan_endpoint(start_scan_request: StartScanRequest):
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{services['scheduler']['endpoint']}/start-scan",
-            json=start_scan_request.model_dump(mode='json'),
-        )
-    response.raise_for_status()
-    return response.json()
-
-
-def main():
-    uvicorn.run(
-        app,
-        host=services['gateway']['bind_host'],
-        port=services['gateway']['port'],
-    )
+    try:
+        return await start_scan_service(start_scan_request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

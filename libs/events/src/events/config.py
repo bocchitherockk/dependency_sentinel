@@ -7,19 +7,19 @@ class KafkaConfig:
     BOOTSTRAP_SERVERS = f'{os.getenv("KAFKA_INTERNAL_HOST")}:{os.getenv("KAFKA_INTERNAL_PORT")}' if os.getenv("USE_DOCKER") == 'true' else f'{os.getenv("KAFKA_LOOPBACK_HOST")}:{os.getenv("KAFKA_LOOPBACK_PORT")}'
 
     # Topics
-    TOPIC_SCAN_STARTED       = "topic-scan-started"
-    TOPIC_REPOSITORY_CLONED  = "topic-repository-cloned"
-    TOPIC_REPOSITORY_SCANNED = "topic-repository-scanned"
+    TOPIC_REPOSITORY_FILES_LIST_RETRIEVED = "topic-repository-files-list-retrieved"
+    TOPIC_MANIFEST_FILES_DETECTED = "topic-manifest-files-detected"
+    TOPIC_MANIFEST_FILES_CONTENT_RETRIEVED = "topic-manifest-files-content-retrieved"
+    TOPIC_DEPENDENCIES_EXTRACTED = "topic-dependencies-extracted"
     TOPIC_DEPENDENCIES_QUERIED = "topic-dependencies-queried"
     TOPIC_MANIFEST_FILES_EDITED = "topic-manifest-files-edited"
     TOPIC_SCAN_COMPLETED = "topic-scan-completed"
 
     # Consumer Groups
     CONSUMER_GROUP_REPOSITORY_STORAGE_SERVICE = "consumer-group-repository-storage-service"
-    CONSUMER_GROUP_REPOSITORY_SCANNER_SERVICE = "consumer-group-repository-scanner-service"
+    CONSUMER_GROUP_LLM_SERVICE = "consumer-group-llm-service"
     CONSUMER_GROUP_SECURITY_ANALYZER_SERVICE = "consumer-group-security-analyzer-service"
     CONSUMER_GROUP_REGISTRY_SERVICE = "consumer-group-registry-service"
-    CONSUMER_GROUP_SECURITY_INTELLIGENCE_SERVICE = "consumer-group-security-intelligence-service"
 
     PRODUCER_CONFIG = {
         "acks": "all",                  # attendre la confirmation de tous les replicas

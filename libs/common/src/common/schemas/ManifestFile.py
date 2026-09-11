@@ -1,9 +1,7 @@
-from pydantic import BaseModel
 
+from common.schemas.File import File
 from common.schemas.Dependency import Dependency
 
-class ManifestFile(BaseModel):
-    # TODO: change to Path type instead of str.
-    path: str
+class ManifestFile(File):
     dependencies:     list[Dependency]
     dev_dependencies: list[Dependency]
