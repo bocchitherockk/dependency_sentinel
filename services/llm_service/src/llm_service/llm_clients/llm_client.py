@@ -14,6 +14,9 @@ from common.schemas.DependencyUpdateContext import DependencyUpdateContext
 from common.schemas.DependencyUpdatePlan import DependencyUpdatePlan
 from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
 
+from llm_service.schemas.ManifestFileWithoutContent import ManifestFileWithoutContent
+
+
 logger: Logger = get_global_logger(__name__)
 
 class LLMClient(ABC):
@@ -92,16 +95,19 @@ class LLMClient(ABC):
         ]
         chat_result: dict[str, Any] = await self.chat(
             messages=messages,
-            response_format=ManifestFile.model_json_schema(),
+            response_format=ManifestFileWithoutContent.model_json_schema(),
         )
-        result: ManifestFile = ManifestFile(**chat_result)
+        result_without_content = ManifestFileWithoutContent(**chat_result)
+        result: ManifestFile = ManifestFile(
+            **result_without_content.model_dump(),
+            content=manifest_file.content
+        )
 
-        if result.path != str(manifest_file.path):
-            logger.error(f"Manifest file path '{result.path}' returned by the LLM does not match the provided manifest file path '{manifest_file.path}'.")
-            # raise ValueError(f"Manifest file path '{result.path}' returned by the LLM does not match the provided manifest file path '{manifest_file.path}'.")
+        if result.path != manifest_file.path:
+            logger.error(f"Manifest file path '{str(result.path)}' returned by the LLM does not match the provided manifest file path '{str(manifest_file.path)}'.")
             return None
 
-        logger.info(f'LLM extracted dependencies for manifest file: {manifest_file.path}')
+        logger.info(f'LLM extracted dependencies for manifest file: {str(manifest_file.path)}')
         logger.debug(f'Extracted dependencies: {result}')
         return result
 
@@ -146,7 +152,7 @@ class LLMClient(ABC):
                 messages=messages,
                 mcp_client=mcp_client,
             )
-        logger.info(f'LLM updated manifest file: {manifest_file.path}')
+        logger.info(f'LLM updated manifest file: {str(manifest_file.path)}')
         logger.debug(f'Modifications summary: {modifications_summary}')
         return modifications_summary
 
@@ -469,7 +475,7 @@ The summary must:
         return f'''
 Update the following dependency manifest according to the provided update plan.
 
-Manifest file path: {manifest_file.path}
+Manifest file path: {str(manifest_file.path)}
 
 Manifest file content:
 ```text

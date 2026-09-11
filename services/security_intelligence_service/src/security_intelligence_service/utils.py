@@ -110,8 +110,8 @@ async def update_manifest_file(manifest_file: File, update_plan: ManifestFileUpd
         )
 
     response.raise_for_status()
-    logger.info(f"Manifest file '{manifest_file.path}' updated with LLM service.")
-    logger.debug(f"Update reasoning for '{manifest_file.path}': {response.text}")
+    logger.info(f"Manifest file '{str(manifest_file.path)}' updated with LLM service.")
+    logger.debug(f"Update reasoning for '{str(manifest_file.path)}': {response.text}")
     return response.text
 
 async def analyze_update_context_and_update_manifests(

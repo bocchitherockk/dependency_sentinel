@@ -38,7 +38,7 @@ async def detect_manifest_files(retrieved_repository_files_list: list[File]) -> 
     ]
 
     logger.info(f'Detected {len(result)} manifest files from {len(retrieved_repository_files_list)} repository files.')
-    logger.debug(f'Detected manifest files: {[file.path for file in result]}')
+    logger.debug(f'Detected manifest files: {[str(file.path) for file in result]}')
     return result
 
 async def extract_dependencies(detected_manifest_files: list[File]) -> list[ManifestFile]:
@@ -47,7 +47,7 @@ async def extract_dependencies(detected_manifest_files: list[File]) -> list[Mani
 
     tasks = []
     for manifest_file in detected_manifest_files:
-        logger.info(f"Extracting dependencies from manifest file '{manifest_file.path}' (model = {llm_model}).")
+        logger.info(f"Extracting dependencies from manifest file '{str(manifest_file.path)}' (model = {llm_model}).")
         logger.debug(f'Manifest file: {manifest_file.model_dump_json(indent=2)}')
         tasks.append(model.extract_dependencies(manifest_file))
 

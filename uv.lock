@@ -979,6 +979,7 @@ version = "0.1.0"
 source = { editable = "services/llm_service" }
 dependencies = [
     { name = "common" },
+    { name = "events" },
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "google-genai" },
@@ -991,6 +992,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "common", editable = "libs/common" },
+    { name = "events", editable = "libs/events" },
     { name = "fastapi", specifier = ">=0.139.2" },
     { name = "fastmcp", specifier = ">=3.4.7" },
     { name = "google-genai", specifier = ">=2.14.0" },

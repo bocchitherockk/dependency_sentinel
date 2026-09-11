@@ -99,6 +99,6 @@ def retrieve_manifest_files_content(manifest_files: list[File]) -> list[File]:
         manifest_file_with_content: File = get_fs_object(REPOSITORIES_PATH / manifest_file.path, display_files_content=True)
         manifest_file_with_content = remove_repository_name_prefix(manifest_file_with_content, REPOSITORIES_PATH)
         result.append(manifest_file_with_content)
-        logger.info(f'Retrieved content for manifest file: {manifest_file.path}')
+        logger.info(f'Retrieved content for manifest file: {str(manifest_file.path)}')
         logger.debug(f'Manifest file content: {manifest_file_with_content.content}')
     return result
