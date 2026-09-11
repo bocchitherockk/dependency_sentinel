@@ -157,24 +157,6 @@ services:
       kafka:
         condition: service_healthy
 
-  # service security-intelligence-service:
-  security-intelligence-service:
-    build:
-      context: .
-      dockerfile: services/security_intelligence_service/Dockerfile
-    container_name: security-intelligence-service
-    ports:
-      - "${SECURITY_INTELLIGENCE_SERVICE_PORT}:${SECURITY_INTELLIGENCE_SERVICE_PORT}"
-    env_file:
-      - .env
-    networks:
-      - dependency-network
-    depends_on:
-      llm-service:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-
 volumes:
   kafka_data: null
 

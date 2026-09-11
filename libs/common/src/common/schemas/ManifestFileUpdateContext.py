@@ -1,8 +1,7 @@
-from pydantic import BaseModel
 
+from common.schemas.ManifestFile import ManifestFile
 from common.schemas.DependencyUpdateContext import DependencyUpdateContext
 
-class ManifestFileUpdateContext(BaseModel):
-    manifest_file_path: str
+class ManifestFileUpdateContext(ManifestFile):
     dependencies_update_context:     list[DependencyUpdateContext]
     dev_dependencies_update_context: list[DependencyUpdateContext]

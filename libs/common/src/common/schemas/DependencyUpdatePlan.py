@@ -5,3 +5,6 @@ class DependencyUpdatePlan(BaseModel):
     current_version: str
     recommended_version: str
     reasoning: str
+    
+    def is_update(self) -> bool:
+        return self.current_version != self.recommended_version

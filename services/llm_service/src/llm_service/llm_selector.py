@@ -24,7 +24,7 @@ class LLMSelector:
     }
 
     @staticmethod
-    def get_llm_model(model_name: str | None) -> LLMClient:
+    def get_llm_model(model_name: str | None = None) -> LLMClient:
         if model_name is None:
             model_name = 'default'
         if model_name not in LLMSelector.llm_clients:

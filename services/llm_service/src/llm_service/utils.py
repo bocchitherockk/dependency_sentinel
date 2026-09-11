@@ -4,6 +4,10 @@ from logging import Logger
 from common.logging.global_logger import get_global_logger
 from common.schemas.File import File
 from common.schemas.ManifestFile import ManifestFile
+from common.schemas.DependencyUpdateContext import DependencyUpdateContext
+from common.schemas.DependencyUpdatePlan import DependencyUpdatePlan
+from common.schemas.ManifestFileUpdateContext import ManifestFileUpdateContext
+from common.schemas.ManifestFileUpdatePlan import ManifestFileUpdatePlan
 
 from llm_service.llm_selector import LLMSelector
 from llm_service.llm_clients.llm_client import LLMClient
@@ -56,3 +60,65 @@ async def extract_dependencies(detected_manifest_files: list[File]) -> list[Mani
     logger.info(f'Extracted dependencies from {len(manifest_files)} manifest files.')
     logger.debug(f'Extracted dependencies: {[manifest_file.model_dump_json(indent=2) for manifest_file in manifest_files]}')
     return manifest_files
+
+
+async def get_dependency_update_plan(dependency_update_context: DependencyUpdateContext) -> DependencyUpdatePlan:
+    llm_model: str = 'default'
+    model: LLMClient = LLMSelector.get_llm_model(llm_model)
+    dependency_update_plan: DependencyUpdatePlan = await model.get_dependency_update_plan(dependency_update_context)
+    logger.info(f"DependencyUpdatePlan generated for dependency '{dependency_update_context.current_version_dependency_report.name}' with current version '{dependency_update_context.current_version_dependency_report.version}' in registry '{dependency_update_context.current_version_dependency_report.registry_name}'.")
+    logger.debug(f'DependencyUpdatePlan details: {dependency_update_plan.model_dump_json(indent=2)}')
+    return dependency_update_plan
+
+async def get_dependencies_update_plan(dependencies_update_context: list[DependencyUpdateContext]) -> list[DependencyUpdatePlan]:
+    tasks = [
+        get_dependency_update_plan(context)
+        for context in dependencies_update_context
+    ]
+    dependencies_update_plan: list[DependencyUpdatePlan] = await asyncio.gather(*tasks)
+    logger.info(f"DependenciesUpdatePlan generated for {len(dependencies_update_plan)} dependencies.")
+    logger.debug(f'DependenciesUpdatePlan details: {[dependency_update_plan.model_dump_json(indent=2) for dependency_update_plan in dependencies_update_plan]}')
+    return dependencies_update_plan
+
+async def get_manifest_file_update_plan(manifest_file_update_context: ManifestFileUpdateContext) -> ManifestFileUpdatePlan:
+    dependencies_update_plan, dev_dependencies_update_plan = await asyncio.gather(
+        get_dependencies_update_plan(manifest_file_update_context.dependencies_update_context),
+        get_dependencies_update_plan(manifest_file_update_context.dev_dependencies_update_context)
+    )
+
+    manifest_file_update_plan: ManifestFileUpdatePlan = ManifestFileUpdatePlan(
+        **manifest_file_update_context.model_dump(),
+        dependencies_updates=[
+            dependency_update_plan
+            for dependency_update_plan in dependencies_update_plan
+            if dependency_update_plan.current_version != dependency_update_plan.recommended_version
+        ],
+        dev_dependencies_updates=[
+            dev_dependency_update_plan
+            for dev_dependency_update_plan in dev_dependencies_update_plan
+            if dev_dependency_update_plan.current_version != dev_dependency_update_plan.recommended_version
+        ],
+    )
+    logger.info(f"ManifestFileUpdatePlan generated for manifest file '{manifest_file_update_context.path}'.")
+    logger.debug(f'ManifestFileUpdatePlan details: {manifest_file_update_plan.model_dump_json(indent=2)}')
+    return manifest_file_update_plan
+
+async def get_manifest_files_update_plan(manifest_files_update_context: list[ManifestFileUpdateContext]) -> list[ManifestFileUpdatePlan]:
+    tasks = [
+        get_manifest_file_update_plan(context)
+        for context in manifest_files_update_context
+    ]
+    manifest_files_update_plan: list[ManifestFileUpdatePlan] = await asyncio.gather(*tasks)
+    logger.info(f"ManifestFilesUpdatePlan generated for {len(manifest_files_update_plan)} manifest files.")
+    logger.debug(f'ManifestFilesUpdatePlan details: {[_manifest_file_update_plan.model_dump_json(indent=2) for _manifest_file_update_plan in manifest_files_update_plan]}')
+    return manifest_files_update_plan
+
+async def update_manifest_file(manifest_file_update_plan: ManifestFileUpdatePlan) -> str:
+    llm_model: str = 'gemini-3.5-flash-lite'
+    model: LLMClient = LLMSelector.get_llm_model(llm_model)
+
+    update_summary: str = await model.update_manifest_file(manifest_file_update_plan)
+
+    logger.info(f"Manifest file '{str(manifest_file_update_plan.path)}' updated with LLM service.")
+    logger.debug(f"Update reasoning for '{str(manifest_file_update_plan.path)}': {update_summary}")
+    return update_summary

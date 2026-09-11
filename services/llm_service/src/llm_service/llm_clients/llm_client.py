@@ -111,15 +111,15 @@ class LLMClient(ABC):
         logger.debug(f'Extracted dependencies: {result}')
         return result
 
-    async def get_update_plan(self, dependency_update_context: DependencyUpdateContext) -> DependencyUpdatePlan:
+    async def get_dependency_update_plan(self, dependency_update_context: DependencyUpdateContext) -> DependencyUpdatePlan:
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
-                'content': self.system_instructions_get_update_plan()
+                'content': self.system_instructions_get_dependency_update_plan()
             },
             {
                 'role': 'user',
-                'content': self.prompt_get_update_plan(dependency_update_context)
+                'content': self.prompt_get_dependency_update_plan(dependency_update_context)
             }
         ]
         chat_result: dict[str, Any] = await self.chat(
@@ -131,30 +131,29 @@ class LLMClient(ABC):
         logger.debug(f'Generated update plan: {result}')
         return result
 
-    async def update_manifest(
+    async def update_manifest_file(
         self,
-        manifest_file: File,
-        update_plan: ManifestFileUpdatePlan,
+        manifest_file_update_plan: ManifestFileUpdatePlan,
     ) -> str:
         messages: list[dict[str, Any]] = [
             {
                 'role': 'system',
-                'content': self.system_instructions_update_manifest()
+                'content': self.system_instructions_update_manifest_file()
             },
             {
                 'role': 'user',
-                'content': self.prompt_update_manifest(manifest_file, update_plan)
+                'content': self.prompt_update_manifest_file(manifest_file_update_plan)
             }
         ]
-        
+
         async with fastmcp.Client(f"{services['mcp-server']['endpoint']}/mcp") as mcp_client:
-            modifications_summary: str = await self.agent(
+            updates_summary: str = await self.agent(
                 messages=messages,
                 mcp_client=mcp_client,
             )
-        logger.info(f'LLM updated manifest file: {str(manifest_file.path)}')
-        logger.debug(f'Modifications summary: {modifications_summary}')
-        return modifications_summary
+        logger.info(f'LLM updated manifest file: {str(manifest_file_update_plan.path)}')
+        logger.debug(f'Modifications summary: {updates_summary}')
+        return updates_summary
 
     # These methods are here in case a specific LLM client wants to provide its own prompts and response formats, otherwise these are the default ones that will be used.
     # They accept **kwargs so that they can be customized by specific LLM clients if needed.
@@ -326,7 +325,7 @@ and here is its content:
 ```
 '''
 
-    def system_instructions_get_update_plan(self, **kwargs) -> str:
+    def system_instructions_get_dependency_update_plan(self, **kwargs) -> str:
         return '''
 You are a senior software engineer and cybersecurity expert.
 
@@ -380,7 +379,7 @@ Output rules:
 - Return only valid JSON matching the provided schema.
 '''
 
-    def prompt_get_update_plan(self, dependency_update_context: DependencyUpdateContext, **kwargs) -> str:
+    def prompt_get_dependency_update_plan(self, dependency_update_context: DependencyUpdateContext, **kwargs) -> str:
         dependency_update_context_json: str = dependency_update_context.model_dump_json(exclude={
             'current_version_dependency_report': {
                 'vulnerabilities': {
@@ -413,7 +412,7 @@ Do not make assumptions about vulnerabilities or versions that are not present i
 ```
 '''
 
-    def system_instructions_update_manifest(self, **kwargs) -> str:
+    def system_instructions_update_manifest_file(self, **kwargs) -> str:
         return '''
 You are an expert software engineer and DevSecOps specialist.
 
@@ -471,19 +470,20 @@ The summary must:
 - Do not repeat the detailed reasoning from each dependency update plan unless it is necessary to explain the overall change.
 '''
 
-    def prompt_update_manifest(self, manifest_file: File, update_plan: ManifestFileUpdatePlan, **kwargs) -> str:
+    def prompt_update_manifest_file(self, manifest_file_update_plan: ManifestFileUpdatePlan, **kwargs) -> str:
         return f'''
 Update the following dependency manifest according to the provided update plan.
 
-Manifest file path: {str(manifest_file.path)}
+Manifest file path: {str(manifest_file_update_plan.path)}
 
 Manifest file content:
 ```text
-{manifest_file.content}
+{manifest_file_update_plan.content}
 ```
 
 Update plan:
 ```json
-{update_plan.model_dump_json(indent=2)}
+{[dependency_update_plan.model_dump() for dependency_update_plan in manifest_file_update_plan.dependencies_updates]}
+{[dev_dependency_update_plan.model_dump() for dev_dependency_update_plan in manifest_file_update_plan.dev_dependencies_updates]}
 ```
 '''

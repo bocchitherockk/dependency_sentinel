@@ -1,8 +1,10 @@
 from logging import Logger
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
 from git import Repo
+from github import Github
 
 from common.logging.global_logger import get_global_logger
 from common.schemas.Directory import Directory
@@ -102,3 +104,64 @@ def retrieve_manifest_files_content(manifest_files: list[File]) -> list[File]:
         logger.info(f'Retrieved content for manifest file: {str(manifest_file.path)}')
         logger.debug(f'Manifest file content: {manifest_file_with_content.content}')
     return result
+
+def commit_and_push_changes(repository_path: Path) -> None:
+    if not repository_path.exists():
+        logger.error(f"The repository path '{repository_path}' does not exist.")
+        raise FileNotFoundError(f"The repository path '{repository_path}' does not exist.")
+
+    repo = Repo(repository_path)
+    repo.git.add(A=True)  # Stage all changes
+    repo.index.commit('Update manifest files')
+    current_branch = repo.active_branch.name
+
+    github_access_token = os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')
+    remote_url = repo.remotes.origin.url.replace('www.github.com', 'github.com') # we remove the 'www' prefix because it can cause issues with authentication (github am i right ??, billion dollar company)
+    if remote_url.startswith('https://') and '@' not in remote_url and github_access_token:
+        auth_url = remote_url.replace('https://', f'https://{github_access_token}:@')
+        repo.git.push(auth_url, f'{current_branch}:{current_branch}')
+    else:
+        repo.git.push('origin', current_branch)
+
+    logger.info(f"Changes committed and pushed for repository at '{repository_path}' on branch '{current_branch}'.")
+
+def create_pull_request(
+    repository_name: str,
+    repository_owner_name: str,
+    default_branch: str,
+    branch_name: str,
+    body: str
+) -> None:
+    github_access_token: str = os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')
+    g = Github(github_access_token)
+
+    repo = g.get_repo(f'{repository_owner_name}/{repository_name}')
+
+    pull_request = repo.create_pull(
+        title='Dependency Sentinel auto update dependencies',
+        base=default_branch,
+        head=branch_name,
+        body=body,
+    )
+    logger.info(f"Pull request created for repository '{repository_name}' on branch '{branch_name}'.")
+    logger.debug(f"Pull request URL: {pull_request.html_url}")
+
+def create_git_branch(
+    repository_name: str,
+    branch_name: str,
+) -> None:
+    repository_path: Path = REPOSITORIES_PATH / repository_name
+
+    if not repository_path.exists():
+        error_message: str = f"Repository '{repository_path}' does not exist."
+        logger.error(error_message)
+        raise FileNotFoundError(error_message)
+
+    if not branch_name:
+        error_message: str = f"Invalid branch name '{branch_name}' for repository '{repository_name}'."
+        logger.error(error_message)
+        raise ValueError(error_message)
+
+    repo: Repo = Repo(repository_path)
+    repo.git.checkout('HEAD', b=branch_name)
+    logger.info(f"Branch '{branch_name}' created successfully for repository '{repository_name}'.")

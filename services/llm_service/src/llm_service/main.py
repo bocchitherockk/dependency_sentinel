@@ -13,6 +13,8 @@ from llm_service.events.ManifestFilesDetectedEventProducer import ManifestFilesD
 from llm_service.events.RepositoryFilesListRetrievedEventConsumer import RepositoryFilesListRetrievedEventConsumer
 from llm_service.events.DependenciesExtractedEventProducer import DependenciesExtractedEventProducer
 from llm_service.events.ManifestFilesContentRetrievedEventConsumer import ManifestFilesContentRetrievedEventConsumer
+from llm_service.events.ManifestFilesEditedEventProducer import ManifestFilesEditedEventProducer
+from llm_service.events.DependenciesQueriedEventConsumer import DependenciesQueriedEventConsumer
 from llm_service.exceptions.LLMModelNotFoundException import LLMModelNotFoundException
 from llm_service.exceptions.LLMRequestException import LLMRequestException
 from llm_service.exceptions.ToolCallException import ToolCallException
@@ -23,6 +25,9 @@ manifest_files_detected_event_producer: ManifestFilesDetectedEventProducer = Man
 repository_files_list_retrieved_event_consumer: RepositoryFilesListRetrievedEventConsumer = RepositoryFilesListRetrievedEventConsumer(manifest_files_detected_event_producer)
 dependencies_extracted_event_producer: DependenciesExtractedEventProducer = DependenciesExtractedEventProducer()
 manifest_files_content_retrieved_event_consumer: ManifestFilesContentRetrievedEventConsumer = ManifestFilesContentRetrievedEventConsumer(dependencies_extracted_event_producer)
+manifest_files_edited_event_producer: ManifestFilesEditedEventProducer = ManifestFilesEditedEventProducer()
+dependencies_queried_event_consumer: DependenciesQueriedEventConsumer = DependenciesQueriedEventConsumer(manifest_files_edited_event_producer)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,6 +35,8 @@ async def lifespan(app: FastAPI):
     await repository_files_list_retrieved_event_consumer.start()
     await dependencies_extracted_event_producer.start()
     await manifest_files_content_retrieved_event_consumer.start()
+    await manifest_files_edited_event_producer.start()
+    await dependencies_queried_event_consumer.start()
 
     repository_files_list_retrieved_event_consumer_task = asyncio.create_task(
         repository_files_list_retrieved_event_consumer.consume()
@@ -37,16 +44,22 @@ async def lifespan(app: FastAPI):
     manifest_files_content_retrieved_event_consumer_task = asyncio.create_task(
         manifest_files_content_retrieved_event_consumer.consume()
     )
+    dependencies_queried_event_consumer_task = asyncio.create_task(
+        dependencies_queried_event_consumer.consume()
+    )
 
     yield
 
     repository_files_list_retrieved_event_consumer_task.cancel()
     manifest_files_content_retrieved_event_consumer_task.cancel()
+    dependencies_queried_event_consumer_task.cancel()
 
     await manifest_files_detected_event_producer.stop()
     await repository_files_list_retrieved_event_consumer.stop()
     await dependencies_extracted_event_producer.stop()
     await manifest_files_content_retrieved_event_consumer.stop()
+    await manifest_files_edited_event_producer.stop()
+    await dependencies_queried_event_consumer.stop()
 
 
 app = FastAPI(

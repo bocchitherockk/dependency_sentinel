@@ -17,17 +17,9 @@ logger.debug(f'    REPOSITORY_STORAGE_SERVICE_PORT:    {os.getenv("REPOSITORY_ST
 logger.debug(f'    LLM_SERVICE_PORT:                   {os.getenv("LLM_SERVICE_PORT")}')
 logger.debug(f'    REGISTRY_SERVICE_PORT:              {os.getenv("REGISTRY_SERVICE_PORT")}')
 logger.debug(f'    MCP_SERVER_PORT:                    {os.getenv("MCP_SERVER_PORT")}')
-logger.debug(f'    SECURITY_INTELLIGENCE_SERVICE_PORT: {os.getenv("SECURITY_INTELLIGENCE_SERVICE_PORT")}')
 
 
 services = {
-    'scheduler': {
-        'bind_host': '0.0.0.0',
-        'docker_host': 'scheduler',
-        'loopback_host': '127.0.0.1',
-        'port': int(os.getenv('SCHEDULER_PORT')),
-        'endpoint': None,
-    },
     'gateway': {
         'bind_host': '0.0.0.0',
         'docker_host': 'gateway',
@@ -63,11 +55,11 @@ services = {
         'port': int(os.getenv('MCP_SERVER_PORT')),
         'endpoint': None,
     },
-    'security-intelligence-service': {
+    'scheduler': {
         'bind_host': '0.0.0.0',
-        'docker_host': 'security-intelligence-service',
+        'docker_host': 'scheduler',
         'loopback_host': '127.0.0.1',
-        'port': int(os.getenv('SECURITY_INTELLIGENCE_SERVICE_PORT')),
+        'port': int(os.getenv('SCHEDULER_PORT')),
         'endpoint': None,
     },
 }

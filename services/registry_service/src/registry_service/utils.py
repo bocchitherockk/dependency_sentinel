@@ -61,7 +61,7 @@ async def get_manifest_file_update_context(manifest_file: ManifestFile) -> Manif
         ])
     )
     result: ManifestFileUpdateContext = ManifestFileUpdateContext(
-        manifest_file_path=str(manifest_file.path),
+        **manifest_file.model_dump(),
         dependencies_update_context=dependencies_update_context,
         dev_dependencies_update_context=dev_dependencies_update_context,
     )

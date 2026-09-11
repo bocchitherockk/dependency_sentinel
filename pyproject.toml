@@ -28,7 +28,6 @@ repository-storage-service = { workspace = true }
 llm_service = { workspace = true }
 registry-service = { workspace = true }
 mcp-server = { workspace = true }
-security-intelligence-service = { workspace = true }
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]

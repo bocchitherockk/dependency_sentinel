@@ -20,7 +20,6 @@ class KafkaConfig:
     CONSUMER_GROUP_LLM_SERVICE = "consumer-group-llm-service"
     CONSUMER_GROUP_SECURITY_ANALYZER_SERVICE = "consumer-group-security-analyzer-service"
     CONSUMER_GROUP_REGISTRY_SERVICE = "consumer-group-registry-service"
-    CONSUMER_GROUP_SECURITY_INTELLIGENCE_SERVICE = "consumer-group-security-intelligence-service"
 
     PRODUCER_CONFIG = {
         "acks": "all",                  # attendre la confirmation de tous les replicas
