@@ -20,15 +20,14 @@ logger.info(f"LLM Service batch size set to {BATCH_SIZE} files per request.")
 
 
 async def detect_manifest_files(retrieved_repository_files_list: list[File]) -> list[File]:
-    llm_model: str = 'gemini-3.5-flash-lite'
-    model: LLMClient = LLMSelector.get_llm_model('gemini-3.5-flash-lite')
+    llm_model: str = 'default'
+    model: LLMClient = LLMSelector.get_llm_model(llm_model)
 
     total_batches = (len(retrieved_repository_files_list) + BATCH_SIZE - 1) // BATCH_SIZE
     tasks = []
     for batch_index in range(0, len(retrieved_repository_files_list), BATCH_SIZE):
         batch: list[File] = retrieved_repository_files_list[batch_index : (batch_index + BATCH_SIZE)]
 
-        # TODO: there is a small unharmful bug here, the batch index is not literally the batch index, it is the file index, so the logging message is incorrect
         logger.info(f"Detecting manifest files: batch (number = {batch_index + 1}/{total_batches}) (size = {len(batch)}) (model = {llm_model}).")
         logger.debug(f'Batch {batch_index + 1} content: {[file.model_dump_json(indent=2) for file in batch]}')
 
@@ -46,7 +45,7 @@ async def detect_manifest_files(retrieved_repository_files_list: list[File]) -> 
     return result
 
 async def extract_dependencies(detected_manifest_files: list[File]) -> list[ManifestFile]:
-    llm_model: str = 'gemini-3.5-flash-lite'
+    llm_model: str = 'default'
     model: LLMClient = LLMSelector.get_llm_model(llm_model)
 
     tasks = []
@@ -114,7 +113,7 @@ async def get_manifest_files_update_plan(manifest_files_update_context: list[Man
     return manifest_files_update_plan
 
 async def update_manifest_file(manifest_file_update_plan: ManifestFileUpdatePlan) -> str:
-    llm_model: str = 'gemini-3.5-flash-lite'
+    llm_model: str = 'default'
     model: LLMClient = LLMSelector.get_llm_model(llm_model)
 
     update_summary: str = await model.update_manifest_file(manifest_file_update_plan)

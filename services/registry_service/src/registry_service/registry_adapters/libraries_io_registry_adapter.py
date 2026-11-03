@@ -23,7 +23,7 @@ logger.debug(f'    LIBRARIES_IO_API_KEY: {os.getenv("LIBRARIES_IO_API_KEY")}')
 class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     _supported_registries: list[str] | None = None
     base_url: str = 'https://libraries.io/api'
-    api_key:  str = os.getenv('LIBRARIES_IO_API_KEY', None)
+    api_key:  str | None = os.getenv('LIBRARIES_IO_API_KEY') or None
     # normally this should be 60 requests per minute
     # but `get_supported_registries()` is not an async function, meaning we can't call `await rate_limiter.acquire()` in it
     # so we can't use the rate limiter in it.
@@ -35,17 +35,10 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     @override
     @staticmethod
     def get_supported_registries() -> list[str]:
-        with LibrariesIORegistryAdapter._supported_registries_lock:
-            if LibrariesIORegistryAdapter._supported_registries is None:
-                url: str = f'{LibrariesIORegistryAdapter.base_url}/platforms'
-                params = { 'api_key': LibrariesIORegistryAdapter.api_key } if LibrariesIORegistryAdapter.api_key is not None else {}
-                response = httpx.get(url, params=params, timeout=None)
-                response.raise_for_status()
-                data = response.json()
-                logger.info(f'Fetched supported registries for Libraries.io')
-                logger.debug(f'Supported registries details: {data}')
-                LibrariesIORegistryAdapter._supported_registries = [platform['name'] for platform in data]
-        return LibrariesIORegistryAdapter._supported_registries
+        return [
+            'NPM', 'Maven', 'PyPI', 'Rubygems', 'Packagist', 'NuGet',
+            'Cargo', 'Go', 'Hex', 'Bower', 'CocoaPods', 'Clojars', 'Pub'
+        ]
 
     @override
     @staticmethod
@@ -193,85 +186,160 @@ class LibrariesIORegistryAdapter(BaseRegistryAdapter):
     @override
     @staticmethod
     async def get_candidate_versions_dependencies(dependency: Dependency) -> tuple[Dependency | None, Dependency | None]:
-        safe_dependency_name: str = dependency.name.replace('/', '%2F')
-        corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
-        url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
-        params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key is not None else {}
+        registry_upper = (dependency.registry_name or '').upper()
 
-        # We follow redirects because the Libraries.io API may redirect to another URL for certain requests
-        # for example, when the dependency name does not exactly match the name in the registry, it needs to be capitalized
-        # the Libraries.io API will redirect to the correct URL for that dependency
-        async def limit_redirects(response):
-            # Check if the response is a redirect status
-            if response.is_redirect:
-                logger.info(f"Received redirect response for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
-                logger.debug(f'Original URL: {response.request.url}, Redirected URL: {response.headers.get("location")}')
-                # Make the hook obtain the rate limiter before hitting the redirected URL
-                # because it is a new request and we need to respect the rate limit for it
-                await LibrariesIORegistryAdapter.rate_limiter.acquire()
-
-        await LibrariesIORegistryAdapter.rate_limiter.acquire()
-        async with httpx.AsyncClient(
-            timeout=None,
-            follow_redirects=True,
-            event_hooks={'response': [limit_redirects]},
-        ) as client:
-            response = await client.get(url, params=params)
-
-        response.raise_for_status()
-        data = response.json()
-
-        latest_compatible_version_dependency: Dependency | None = None
-        latest_version_dependency: Dependency | None = None
-
-        # Sometimes `data['latest_stable_release_number']` is null
-        latest_stable_release_number: str | None = data['latest_stable_release_number']
-        if latest_stable_release_number is None:
-            logger.warning(f"Latest stable release number is null for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
-        else:
-            latest_version_dependency: Dependency = Dependency(
-                name=dependency.name,
-                version=latest_stable_release_number,
-                registry_name=dependency.registry_name,
-            )
-            logger.info(f"Latest version for dependency '{dependency.name}' fetched in registry '{corrected_registry_name}' is '{latest_stable_release_number}'.")
-
-        try:
-            # TODO: this is a quick workaround to get the exact version
-            current_version = semver.VersionInfo.parse(dependency.version.lstrip("^~<>="))
-        except ValueError:
-            logger.error(f"Invalid Semver for current version '{dependency.version}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
-            return latest_compatible_version_dependency, latest_version_dependency
-        
-        for i in range(len(data['versions']) - 1, -1, -1):
+        # 1. Direct NPM registry fetch (faster, no rate limit, no api key required)
+        if registry_upper == 'NPM':
             try:
-                iter_version = semver.VersionInfo.parse(data['versions'][i]['number'])
-            except ValueError:
-                # Sometimes, the version includes some invalid characters that are not compatible with Semver.
-                # In this case, we skip this version and continue to the next one in hope of finding a valid one.
-                logger.warning(f"Skipping invalid version '{data['versions'][i]['number']}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
-                continue
+                safe_name = dependency.name
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.get(f'https://registry.npmjs.org/{safe_name}')
+                if resp.status_code == 200:
+                    data = resp.json()
+                    latest_str = data.get('dist-tags', {}).get('latest')
+                    versions_list = list(data.get('versions', {}).keys())
 
-            if iter_version.major == current_version.major:
-                latest_compatible_version_dependency = Dependency(
+                    latest_dep = Dependency(name=dependency.name, version=latest_str, registry_name=dependency.registry_name) if latest_str else None
+                    latest_comp_dep = None
+                    try:
+                        curr_v = semver.VersionInfo.parse(dependency.version.lstrip('^~<>='))
+                        for v_str in reversed(versions_list):
+                            try:
+                                p = semver.VersionInfo.parse(v_str)
+                                if p.major == curr_v.major:
+                                    latest_comp_dep = Dependency(name=dependency.name, version=v_str, registry_name=dependency.registry_name)
+                                    break
+                            except ValueError:
+                                continue
+                    except ValueError:
+                        pass
+                    logger.info(f'[NPM Direct] Candidate versions for {dependency.name}: comp={latest_comp_dep.version if latest_comp_dep else None}, latest={latest_dep.version if latest_dep else None}')
+                    return latest_comp_dep, latest_dep
+            except Exception as e:
+                logger.warning(f'[NPM Direct] Query failed for {dependency.name}: {e}')
+
+        # 2. Direct Maven Central search fetch
+        if registry_upper == 'MAVEN':
+            try:
+                if ':' in dependency.name:
+                    g, a = dependency.name.split(':', 1)
+                    q = f'g:{g} AND a:{a}'
+                else:
+                    q = f'a:{dependency.name}'
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.get('https://search.maven.org/solrsearch/select', params={'q': q, 'core': 'gav', 'rows': 100, 'wt': 'json'})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    docs = data.get('response', {}).get('docs', [])
+                    versions_list = [doc['v'] for doc in docs]
+
+                    latest_str = None
+                    latest_comp_str = None
+                    try:
+                        curr_v = semver.VersionInfo.parse(dependency.version.lstrip('^~<>='))
+                        for v_str in versions_list:
+                            try:
+                                p = semver.VersionInfo.parse(v_str)
+                                if not p.prerelease:
+                                    if latest_str is None:
+                                        latest_str = v_str
+                                    if p.major == curr_v.major and latest_comp_str is None:
+                                        latest_comp_str = v_str
+                            except ValueError:
+                                continue
+                    except ValueError:
+                        if versions_list:
+                            latest_str = versions_list[0]
+
+                    latest_dep = Dependency(name=dependency.name, version=latest_str, registry_name=dependency.registry_name) if latest_str else None
+                    latest_comp_dep = Dependency(name=dependency.name, version=latest_comp_str, registry_name=dependency.registry_name) if latest_comp_str else None
+                    logger.info(f'[Maven Direct] Candidate versions for {dependency.name}: comp={latest_comp_dep.version if latest_comp_dep else None}, latest={latest_dep.version if latest_dep else None}')
+                    return latest_comp_dep, latest_dep
+            except Exception as e:
+                logger.warning(f'[Maven Direct] Query failed for {dependency.name}: {e}')
+
+        # 3. Direct PyPI fetch
+        if registry_upper == 'PYPI':
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.get(f'https://pypi.org/pypi/{dependency.name}/json')
+                if resp.status_code == 200:
+                    data = resp.json()
+                    latest_str = data.get('info', {}).get('version')
+                    versions_list = list(data.get('releases', {}).keys())
+                    latest_dep = Dependency(name=dependency.name, version=latest_str, registry_name=dependency.registry_name) if latest_str else None
+                    latest_comp_dep = None
+                    try:
+                        curr_v = semver.VersionInfo.parse(dependency.version.lstrip('^~<>='))
+                        for v_str in reversed(versions_list):
+                            try:
+                                p = semver.VersionInfo.parse(v_str)
+                                if p.major == curr_v.major:
+                                    latest_comp_dep = Dependency(name=dependency.name, version=v_str, registry_name=dependency.registry_name)
+                                    break
+                            except ValueError:
+                                continue
+                    except ValueError:
+                        pass
+                    logger.info(f'[PyPI Direct] Candidate versions for {dependency.name}: comp={latest_comp_dep.version if latest_comp_dep else None}, latest={latest_dep.version if latest_dep else None}')
+                    return latest_comp_dep, latest_dep
+            except Exception as e:
+                logger.warning(f'[PyPI Direct] Query failed for {dependency.name}: {e}')
+
+        # 4. Fallback to Libraries.io
+        try:
+            safe_dependency_name: str = dependency.name.replace('/', '%2F')
+            corrected_registry_name: str = LibrariesIORegistryAdapter.correct_registry_name(dependency.registry_name)
+            url: str = f'{LibrariesIORegistryAdapter.base_url}/{corrected_registry_name}/{safe_dependency_name}'
+            params = {'api_key': LibrariesIORegistryAdapter.api_key} if LibrariesIORegistryAdapter.api_key else {}
+
+            async def limit_redirects(response):
+                if response.is_redirect:
+                    await LibrariesIORegistryAdapter.rate_limiter.acquire()
+
+            await LibrariesIORegistryAdapter.rate_limiter.acquire()
+            async with httpx.AsyncClient(
+                timeout=15.0,
+                follow_redirects=True,
+                event_hooks={'response': [limit_redirects]},
+            ) as client:
+                response = await client.get(url, params=params)
+
+            if response.status_code != 200:
+                logger.warning(f'Libraries.io returned status {response.status_code} for dependency {dependency.name}.')
+                return None, None
+
+            data = response.json()
+            latest_stable_release_number: str | None = data.get('latest_stable_release_number')
+            latest_version_dependency: Dependency | None = None
+            if latest_stable_release_number:
+                latest_version_dependency = Dependency(
                     name=dependency.name,
-                    version=data['versions'][i]['number'],
+                    version=latest_stable_release_number,
                     registry_name=dependency.registry_name,
                 )
-                logger.info(f"Latest compatible version for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}' is '{latest_compatible_version_dependency.version}'.")
-                return latest_compatible_version_dependency, latest_version_dependency
-            logger.debug(f"Version '{data['versions'][i]['number']}' is not compatible with current version '{dependency.version}' for dependency '{dependency.name}' in registry '{corrected_registry_name}'.")
 
-        # TODO: Sometimes we can't find a latest compatible version with the current version in the data['versions'].
-        # Which is weird because at least the current version should be in the list of versions and act as the latest compatible version.
-        # The root reason for that is the LLM is providing a wrong current version from the one in the manifest file, or the manifest file doesn't even have a version and the LLM is providing a version from it's knowledge.
-        # And that version does not even exist in the registry.
+            try:
+                current_version = semver.VersionInfo.parse(dependency.version.lstrip('^~<>='))
+            except ValueError:
+                return None, latest_version_dependency
 
-        # The solution for now is return None for the latest compatible version dependency and handle that case in the caller function.
-        # When we return None for the latest compatible version dependency, it means that the current version provided by the LLM is incorrect.
-        # So the entire update context for this dependency is invalid and we should not provide any update plan for it.
+            versions = data.get('versions', [])
+            for i in range(len(versions) - 1, -1, -1):
+                try:
+                    iter_version = semver.VersionInfo.parse(versions[i]['number'])
+                except ValueError:
+                    continue
 
-        logger.error(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
-        # raise ValueError(f"No compatible version found for dependency '{dependency.name}' with version '{dependency.version}' in registry '{corrected_registry_name}'.")
+                if iter_version.major == current_version.major:
+                    latest_compatible_version_dependency = Dependency(
+                        name=dependency.name,
+                        version=versions[i]['number'],
+                        registry_name=dependency.registry_name,
+                    )
+                    return latest_compatible_version_dependency, latest_version_dependency
 
-        return latest_compatible_version_dependency, latest_version_dependency
+            return None, latest_version_dependency
+        except Exception as e:
+            logger.warning(f'Error querying candidate versions for {dependency.name}: {e}')
+            return None, None

@@ -19,6 +19,9 @@ members = [
     "services/*",
     "libs/*"
 ]
+exclude = [
+    "services/mcp-server"
+]
 
 [tool.uv.sources]
 dependency-sentinel-cli = { workspace = true }

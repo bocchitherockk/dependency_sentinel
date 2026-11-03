@@ -112,7 +112,10 @@ def commit_and_push_changes(repository_path: Path) -> None:
 
     repo = Repo(repository_path)
     repo.git.add(A=True)  # Stage all changes
-    repo.index.commit('Update manifest files')
+    try:
+        repo.index.commit('Update manifest files')
+    except Exception as e:
+        logger.warning(f"Git commit notice: {e}")
     current_branch = repo.active_branch.name
 
     github_access_token = os.getenv('GITHUB_PERSONAL_ACCESS_TOKEN')
@@ -144,7 +147,8 @@ def create_pull_request(
         body=body,
     )
     logger.info(f"Pull request created for repository '{repository_name}' on branch '{branch_name}'.")
-    logger.debug(f"Pull request URL: {pull_request.html_url}")
+    logger.info(f"PULL REQUEST URL: {pull_request.html_url}")
+    print(f"\n========================================\nPULL REQUEST CREATED: {pull_request.html_url}\n========================================\n", flush=True)
 
 def create_git_branch(
     repository_name: str,

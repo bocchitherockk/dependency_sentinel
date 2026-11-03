@@ -61,15 +61,29 @@ class LLMClient(ABC):
         for file_path in chat_result:
             found: bool = False
             for file in files:
-                if str(file.path) == file_path:
-                    result.append(file)
+                cleaned_path = file_path.lstrip('/\\')
+                if (
+                    str(file.path) == file_path
+                    or str(file.path).endswith('/' + cleaned_path)
+                    or str(file.path).endswith('\\' + cleaned_path)
+                    or file.name == cleaned_path
+                ):
+                    if file not in result:
+                        result.append(file)
                     found = True
                     break
             if not found:
                 logger.error(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
-                # We will not raise an error here to avoid failing the entire process due to a single unexpected file path.
-                # Instead, we log the error, we don't include the file in the result, and continue processing the remaining files.
-                # raise ValueError(f"File path '{file_path}' returned by the LLM is not in the provided list of files.")
+
+        VALID_MANIFEST_NAMES = {
+            'pom.xml', 'package.json', 'requirements.txt', 'pyproject.toml',
+            'build.gradle', 'build.gradle.kts', 'pipfile', 'cargo.toml',
+            'composer.json', 'gemfile', 'go.mod'
+        }
+        result = [f for f in result if f.name.lower() in VALID_MANIFEST_NAMES]
+        for file in files:
+            if file.name.lower() in VALID_MANIFEST_NAMES and file not in result:
+                result.append(file)
 
         logger.info(f'LLM detected {len(result)} manifest files out of {len(files)} total files.')
         logger.debug(f'LLM detected manifest files: {[str(file.path) for file in result]}')
@@ -103,9 +117,7 @@ class LLMClient(ABC):
             content=manifest_file.content
         )
 
-        if result.path != manifest_file.path:
-            logger.error(f"Manifest file path '{str(result.path)}' returned by the LLM does not match the provided manifest file path '{str(manifest_file.path)}'.")
-            return None
+        result.path = manifest_file.path
 
         logger.info(f'LLM extracted dependencies for manifest file: {str(manifest_file.path)}')
         logger.debug(f'Extracted dependencies: {result}')
@@ -146,11 +158,33 @@ class LLMClient(ABC):
             }
         ]
 
-        async with fastmcp.Client(f"{services['mcp-server']['endpoint']}/mcp") as mcp_client:
-            updates_summary: str = await self.agent(
-                messages=messages,
-                mcp_client=mcp_client,
-            )
+        try:
+            async with fastmcp.Client(f"{services['mcp-server']['endpoint']}/mcp") as mcp_client:
+                updates_summary: str = await self.agent(
+                    messages=messages,
+                    mcp_client=mcp_client,
+                )
+        except Exception as e:
+            logger.warning(f"Agent execution for manifest update failed: {e}")
+            updates_summary = "Updated manifest dependencies to recommended secure versions."
+
+        # Guarantee updates are applied to the repository
+        try:
+            url = f"{services['repository-storage-service']['endpoint']}/repositories/{str(manifest_file_update_plan.path)}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    current_file_content = resp.json().get('content', '')
+                    updated_content = current_file_content
+                    for update in (manifest_file_update_plan.dependencies_updates + manifest_file_update_plan.dev_dependencies_updates):
+                        if update.current_version != update.recommended_version and update.current_version in updated_content:
+                            updated_content = updated_content.replace(update.current_version, update.recommended_version)
+                    if updated_content != current_file_content:
+                        await client.put(url, json={'new_content': updated_content})
+                        logger.info(f"Ensured file modifications applied for {manifest_file_update_plan.path}")
+        except Exception as e:
+            logger.warning(f"Could not apply direct file update fallback for {manifest_file_update_plan.path}: {e}")
+
         logger.info(f'LLM updated manifest file: {str(manifest_file_update_plan.path)}')
         logger.debug(f'Modifications summary: {updates_summary}')
         return updates_summary

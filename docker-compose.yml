@@ -24,11 +24,11 @@ services:
       KAFKA_LOG4J_ROOT_LOGLEVEL: INFO
       KAFKA_HEAP_OPTS: -Xmx512M -Xms512M
     volumes:
-    - kafka_data:/var/lib/kafka/data
+      - kafka_data:/var/lib/kafka/data
     networks:
-    - dependency-network
+      - dependency-network
     healthcheck:
-    # this healthcheck could be improved
+      # this healthcheck could be improved
       test:
         - CMD
         - nc
@@ -94,6 +94,8 @@ services:
     container_name: repository-storage-service
     ports:
       - "${REPOSITORY_STORAGE_SERVICE_PORT}:${REPOSITORY_STORAGE_SERVICE_PORT}"
+    environment:
+      USE_DOCKER: 'true'
     env_file:
       - .env
       - services/repository_storage_service/.env
